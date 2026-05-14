@@ -1,1 +1,29 @@
 {% extends "core/crud/model_form.html" %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const feeInput = document.getElementById("id_fee_amount");
+    const discountInput = document.getElementById("id_discount_amount");
+    const balanceInput = document.getElementById("id_balance_due");
+
+    if (!feeInput || !discountInput || !balanceInput) return;
+
+    function parseMoney(value) {
+      const n = Number.parseFloat(value);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function recalc() {
+      const fee = parseMoney(feeInput.value);
+      const discount = parseMoney(discountInput.value);
+      const balance = Math.max(0, fee - discount);
+      balanceInput.value = balance.toFixed(2);
+    }
+
+    feeInput.addEventListener("input", recalc);
+    discountInput.addEventListener("input", recalc);
+    recalc();
+  })();
+</script>
+{% endblock %}

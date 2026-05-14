@@ -1,11 +1,28 @@
 from django.contrib.auth import get_user_model
+from datetime import timedelta
 from django.core.exceptions import ValidationError
 from django.core import mail
 from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import NoReverseMatch, reverse
+from django.utils import timezone
 
-from .models import Communication, Contact, EnrollmentStatus, Prospect, ProspectStatus, Student
+from .models import (
+    Communication,
+    Contact,
+    Course,
+    CourseFormat,
+    CourseSession,
+    CourseStatus,
+    Enrollment,
+    EnrollmentStatus,
+    Location,
+    Prospect,
+    ProspectStatus,
+    SessionStatus,
+    Student,
+    Teacher,
+)
 
 
 class StudentArchiveBehaviorTests(TestCase):
@@ -549,6 +566,76 @@ class ProspectBadLeadRuleTests(TestCase):
         self.assertContains(response, "Communication History")
         self.assertContains(response, "Attempt 1")
         self.assertContains(response, "Attempt 2")
+
+
+class EnrollmentFormCalculationTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="enrollment_editor",
+            password="safe-password-123",
+        )
+        self.client.force_login(self.user)
+
+        self.teacher = Teacher.objects.create(
+            first_name="Mina",
+            last_name="Clark",
+            email="mina.clark@example.com",
+        )
+        self.location = Location.objects.create(name="Toronto Center")
+        self.course = Course.objects.create(
+            name="TM Intro Program",
+            format=CourseFormat.IN_PERSON,
+            status=CourseStatus.ACTIVE,
+        )
+        self.session = CourseSession.objects.create(
+            owner=self.user,
+            course=self.course,
+            teacher=self.teacher,
+            session_name="Spring Cohort",
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=5),
+            location=self.location,
+            status=SessionStatus.SCHEDULED,
+        )
+        self.prospect = Prospect.objects.create(
+            owner=self.user,
+            contact=Contact.objects.create(first_name="Lena", last_name="Hart"),
+        )
+        self.student = Student.objects.create(owner=self.user, prospect=self.prospect)
+
+    def _payload(self, *, fee="100.00", discount="10.00"):
+        return {
+            "student": self.student.pk,
+            "session": self.session.pk,
+            "enrollment_date": timezone.localdate().isoformat(),
+            "status": EnrollmentStatus.ENROLLED,
+            "fee_amount": fee,
+            "discount_amount": discount,
+            "balance_due": "9999.99",
+            "notes": "",
+        }
+
+    def test_enrollment_form_uses_date_picker_and_readonly_balance(self):
+        response = self.client.get(reverse("core:enrollment-create"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="id_enrollment_date"')
+        self.assertContains(response, 'type="date"')
+        self.assertContains(response, 'id="id_balance_due"')
+        self.assertContains(response, "disabled")
+
+    def test_balance_due_recalculated_server_side(self):
+        response = self.client.post(reverse("core:enrollment-create"), data=self._payload())
+        self.assertEqual(response.status_code, 302)
+        enrollment = Enrollment.objects.latest("id")
+        self.assertEqual(str(enrollment.balance_due), "90.00")
+
+    def test_discount_cannot_exceed_fee(self):
+        response = self.client.post(
+            reverse("core:enrollment-create"),
+            data=self._payload(fee="100.00", discount="120.00"),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Discount amount cannot exceed fee amount.")
 
 
 @override_settings(

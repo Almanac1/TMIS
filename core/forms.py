@@ -1,3 +1,6 @@
+from datetime import datetime, time
+from decimal import Decimal
+
 from django import forms
 from django.utils import timezone
 
@@ -8,6 +11,7 @@ from .models import (
     ContactMethod,
     InterestLevel,
     Location,
+    Enrollment,
     Payment,
     Prospect,
     ProspectStatus,
@@ -92,6 +96,85 @@ class ProspectFollowUpForm(forms.Form):
     body = forms.CharField(widget=forms.Textarea(attrs={"rows": 4}))
 
 
+class EnrollmentForm(forms.ModelForm):
+    enrollment_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    fee_amount = forms.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        min_value=Decimal("0.00"),
+        widget=forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
+    )
+    discount_amount = forms.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        min_value=Decimal("0.00"),
+        required=False,
+        initial=Decimal("0.00"),
+        widget=forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
+    )
+    balance_due = forms.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        disabled=True,
+        widget=forms.NumberInput(attrs={"step": "0.01"}),
+    )
+
+    class Meta:
+        model = Enrollment
+        fields = "__all__"
+
+    @staticmethod
+    def _as_money(value):
+        value = value if value is not None else Decimal("0.00")
+        return Decimal(value).quantize(Decimal("0.01"))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk and self.instance.enrollment_date:
+            self.initial["enrollment_date"] = timezone.localtime(
+                self.instance.enrollment_date
+            ).date()
+        fee = self.initial.get("fee_amount", getattr(self.instance, "fee_amount", Decimal("0.00")))
+        discount = self.initial.get(
+            "discount_amount",
+            getattr(self.instance, "discount_amount", Decimal("0.00")),
+        )
+        self.initial["discount_amount"] = self._as_money(discount)
+        self.initial["balance_due"] = self._as_money(fee) - self._as_money(discount)
+
+    def clean(self):
+        cleaned = super().clean()
+        fee = self._as_money(cleaned.get("fee_amount"))
+        discount = self._as_money(cleaned.get("discount_amount"))
+        if discount > fee:
+            self.add_error("discount_amount", "Discount amount cannot exceed fee amount.")
+        balance_due = self._as_money(fee - discount)
+        if balance_due < Decimal("0.00"):
+            raise forms.ValidationError("Balance due cannot be negative.")
+        cleaned["fee_amount"] = fee
+        cleaned["discount_amount"] = discount
+        cleaned["balance_due"] = balance_due
+        return cleaned
+
+    def clean_enrollment_date(self):
+        enrollment_day = self.cleaned_data.get("enrollment_date")
+        if enrollment_day is None:
+            return enrollment_day
+        local_dt = datetime.combine(enrollment_day, time.min)
+        return timezone.make_aware(local_dt, timezone.get_current_timezone())
+
+    def save(self, commit=True):
+        enrollment = super().save(commit=False)
+        enrollment.balance_due = self.cleaned_data["balance_due"]
+        if commit:
+            enrollment.save()
+            self.save_m2m()
+        return enrollment
+
+
 class DisbursementReportingFilterForm(forms.Form):
     REPORT_BY_CHOICES = (
         ("teacher", "Governor Disbursement"),
@@ -148,6 +231,28 @@ class InvoicePaymentForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["payment_date"].input_formats = ("%Y-%m-%dT%H:%M",)
+
+
+class PaymentForm(forms.ModelForm):
+    class Meta:
+        model = Payment
+        fields = "__all__"
+        widgets = {
+            "payment_date": forms.DateTimeInput(
+                attrs={"type": "datetime-local"},
+                format="%Y-%m-%dT%H:%M",
+            ),
+            "notes": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["payment_date"].input_formats = ("%Y-%m-%dT%H:%M",)
+        if self.instance and self.instance.pk and self.instance.payment_date:
+            payment_date_value = self.instance.payment_date
+            if timezone.is_aware(payment_date_value):
+                payment_date_value = timezone.localtime(payment_date_value)
+            self.initial["payment_date"] = payment_date_value.strftime("%Y-%m-%dT%H:%M")
 
 
 class CommunicationForm(forms.ModelForm):

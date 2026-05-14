@@ -30,7 +30,9 @@ from .forms import (
     StudentForm,
     DisbursementReportingFilterForm,
     CommunicationForm,
+    EnrollmentForm,
     InvoicePaymentForm,
+    PaymentForm,
     ProspectForm,
     ProspectFollowUpForm,
     ProspectPipelineFilterForm,
@@ -982,6 +984,30 @@ class ProspectCreateView(BaseCreateView):
 class ProspectUpdateView(BaseUpdateView):
     model = Prospect
     form_class = ProspectForm
+    fields = None
+
+
+class EnrollmentCreateView(BaseCreateView):
+    model = Enrollment
+    form_class = EnrollmentForm
+    fields = None
+
+
+class EnrollmentUpdateView(BaseUpdateView):
+    model = Enrollment
+    form_class = EnrollmentForm
+    fields = None
+
+
+class PaymentCreateView(BaseCreateView):
+    model = Payment
+    form_class = PaymentForm
+    fields = None
+
+
+class PaymentUpdateView(BaseUpdateView):
+    model = Payment
+    form_class = PaymentForm
     fields = None
 
 
