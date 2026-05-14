@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from datetime import timedelta
+from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core import mail
 from django.test import TestCase
@@ -16,7 +17,9 @@ from .models import (
     CourseStatus,
     Enrollment,
     EnrollmentStatus,
+    Invoice,
     Location,
+    Payment,
     Prospect,
     ProspectStatus,
     SessionStatus,
@@ -636,6 +639,219 @@ class EnrollmentFormCalculationTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Discount amount cannot exceed fee amount.")
+
+
+class PaymentCreateInvoiceFilteringTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="payment_creator",
+            password="safe-password-123",
+        )
+        self.client.force_login(self.user)
+        self.teacher = Teacher.objects.create(
+            first_name="Noah",
+            last_name="Gray",
+            email="noah.gray@example.com",
+        )
+        self.location = Location.objects.create(name="Montreal Center")
+        self.course = Course.objects.create(
+            name="TM Mastery",
+            format=CourseFormat.IN_PERSON,
+            status=CourseStatus.ACTIVE,
+        )
+        self.session = CourseSession.objects.create(
+            owner=self.user,
+            course=self.course,
+            teacher=self.teacher,
+            session_name="Summer",
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=4),
+            location=self.location,
+            status=SessionStatus.SCHEDULED,
+        )
+        self.student_a = Student.objects.create(
+            owner=self.user,
+            prospect=Prospect.objects.create(
+                owner=self.user,
+                contact=Contact.objects.create(first_name="Ari", last_name="Khan"),
+            ),
+        )
+        self.student_b = Student.objects.create(
+            owner=self.user,
+            prospect=Prospect.objects.create(
+                owner=self.user,
+                contact=Contact.objects.create(first_name="Bea", last_name="Stone"),
+            ),
+        )
+        enrollment_a = Enrollment.objects.create(
+            student=self.student_a,
+            session=self.session,
+            enrollment_date=timezone.now(),
+            status=EnrollmentStatus.ENROLLED,
+            fee_amount=Decimal("200.00"),
+            discount_amount=Decimal("0.00"),
+            balance_due=Decimal("200.00"),
+        )
+        enrollment_b = Enrollment.objects.create(
+            student=self.student_b,
+            session=self.session,
+            enrollment_date=timezone.now(),
+            status=EnrollmentStatus.ENROLLED,
+            fee_amount=Decimal("150.00"),
+            discount_amount=Decimal("0.00"),
+            balance_due=Decimal("150.00"),
+        )
+        self.invoice_a = Invoice.objects.create(
+            owner=self.user,
+            enrollment=enrollment_a,
+            invoice_number="INV-A-1001",
+            issue_date=timezone.localdate(),
+            subtotal="200.00",
+            discount_amount="0.00",
+            tax_amount="0.00",
+            total_amount="200.00",
+            status="sent",
+        )
+        self.invoice_b = Invoice.objects.create(
+            owner=self.user,
+            enrollment=enrollment_b,
+            invoice_number="INV-B-1002",
+            issue_date=timezone.localdate(),
+            subtotal="150.00",
+            discount_amount="0.00",
+            tax_amount="0.00",
+            total_amount="150.00",
+            status="sent",
+        )
+
+    def test_student_query_param_prefills_and_filters_invoices(self):
+        response = self.client.get(reverse("core:payment-create"), {"student": self.student_a.pk})
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertEqual(form.initial.get("student"), self.student_a.pk)
+        queryset_ids = list(form.fields["invoice"].queryset.values_list("id", flat=True))
+        self.assertIn(self.invoice_a.pk, queryset_ids)
+        self.assertNotIn(self.invoice_b.pk, queryset_ids)
+
+    def test_single_open_invoice_is_auto_selected(self):
+        response = self.client.get(reverse("core:payment-create"), {"student": self.student_a.pk})
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertEqual(form.initial.get("invoice"), self.invoice_a.pk)
+
+    def test_no_open_invoice_disables_creation(self):
+        Payment.objects.create(
+            owner=self.user,
+            invoice=self.invoice_a,
+            payment_date=timezone.now(),
+            amount_paid="200.00",
+            payment_method="cash",
+            confirmation_status="confirmed",
+        )
+        response = self.client.get(reverse("core:payment-create"), {"student": self.student_a.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["no_open_invoices"])
+        self.assertContains(response, "Payment creation is disabled")
+
+    def test_no_student_selected_keeps_invoice_dropdown_empty(self):
+        response = self.client.get(reverse("core:payment-create"))
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertEqual(form.fields["invoice"].queryset.count(), 0)
+        self.assertTrue(form.fields["invoice"].disabled)
+        self.assertContains(response, "Select a student to see available invoices.")
+
+    def test_ajax_invoice_lookup_returns_only_selected_student_open_invoices(self):
+        response = self.client.get(
+            reverse("core:payment-invoices-for-student", kwargs={"student_id": self.student_a.pk})
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        invoice_ids = [item["id"] for item in payload["invoices"]]
+        self.assertIn(self.invoice_a.pk, invoice_ids)
+        self.assertNotIn(self.invoice_b.pk, invoice_ids)
+
+    def test_server_blocks_invoice_not_matching_selected_student(self):
+        response = self.client.post(
+            reverse("core:payment-create"),
+            data={
+                "student": self.student_a.pk,
+                "invoice": self.invoice_b.pk,
+                "payment_date": timezone.localtime().strftime("%Y-%m-%dT%H:%M"),
+                "amount_paid": "25.00",
+                "payment_method": "cash",
+                "reference_number": "",
+                "confirmation_status": "pending",
+                "notes": "",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Select a valid choice")
+
+    def test_server_blocks_payment_exceeding_outstanding(self):
+        response = self.client.post(
+            reverse("core:payment-create"),
+            data={
+                "student": self.student_a.pk,
+                "invoice": self.invoice_a.pk,
+                "payment_date": timezone.localtime().strftime("%Y-%m-%dT%H:%M"),
+                "amount_paid": "250.00",
+                "payment_method": "cash",
+                "reference_number": "",
+                "confirmation_status": "pending",
+                "notes": "",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Amount cannot exceed outstanding balance")
+
+    def test_server_blocks_invoice_not_owned_by_user(self):
+        outsider = get_user_model().objects.create_user(
+            username="outsider_payment_owner",
+            password="safe-password-123",
+        )
+        outsider_student = Student.objects.create(
+            owner=outsider,
+            prospect=Prospect.objects.create(
+                owner=outsider,
+                contact=Contact.objects.create(first_name="Out", last_name="Side"),
+            ),
+        )
+        outsider_enrollment = Enrollment.objects.create(
+            student=outsider_student,
+            session=self.session,
+            enrollment_date=timezone.now(),
+            status=EnrollmentStatus.ENROLLED,
+            fee_amount=Decimal("175.00"),
+            discount_amount=Decimal("0.00"),
+            balance_due=Decimal("175.00"),
+        )
+        outsider_invoice = Invoice.objects.create(
+            owner=outsider,
+            enrollment=outsider_enrollment,
+            invoice_number="INV-OUT-1003",
+            issue_date=timezone.localdate(),
+            subtotal="175.00",
+            discount_amount="0.00",
+            tax_amount="0.00",
+            total_amount="175.00",
+            status="sent",
+        )
+        response = self.client.post(
+            reverse("core:payment-create"),
+            data={
+                "student": outsider_student.pk,
+                "invoice": outsider_invoice.pk,
+                "payment_date": timezone.localtime().strftime("%Y-%m-%dT%H:%M"),
+                "amount_paid": "50.00",
+                "payment_method": "cash",
+                "reference_number": "",
+                "confirmation_status": "pending",
+                "notes": "",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Select a valid choice")
 
 
 @override_settings(

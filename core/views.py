@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -1004,11 +1005,74 @@ class PaymentCreateView(BaseCreateView):
     form_class = PaymentForm
     fields = None
 
+    def get_initial(self):
+        initial = super().get_initial()
+        student_id = (self.request.GET.get("student") or "").strip()
+        if student_id.isdigit():
+            initial["student"] = int(student_id)
+        return initial
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["request_user"] = self.request.user
+        student_id = (
+            (self.request.POST.get("student") if self.request.method == "POST" else self.request.GET.get("student"))
+            or ""
+        ).strip()
+        kwargs["selected_student_id"] = int(student_id) if student_id.isdigit() else None
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        form = context.get("form")
+        context["no_open_invoices"] = bool(getattr(form, "no_open_invoices", False))
+        context["invoice_lookup_base_url"] = reverse_lazy("core:payment-invoices-for-student", kwargs={"student_id": 0})
+        selected_student = None
+        student_id = (
+            (self.request.POST.get("student") if self.request.method == "POST" else self.request.GET.get("student"))
+            or ""
+        ).strip()
+        if student_id.isdigit():
+            selected_student = scope_queryset_for_user(
+                queryset=Student.objects.select_related("prospect__contact"),
+                model=Student,
+                user=self.request.user,
+            ).filter(pk=int(student_id)).first()
+        context["selected_student"] = selected_student
+        return context
+
 
 class PaymentUpdateView(BaseUpdateView):
     model = Payment
     form_class = PaymentForm
     fields = None
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["request_user"] = self.request.user
+        kwargs["selected_student_id"] = self.object.invoice.enrollment.student_id if self.object else None
+        return kwargs
+
+
+class PaymentInvoicesForStudentView(ProductLoginRequiredMixin, View):
+    def get(self, request, student_id):
+        student = get_object_or_404(
+            scope_queryset_for_user(
+                queryset=Student.objects.select_related("prospect__contact"),
+                model=Student,
+                user=request.user,
+            ),
+            pk=student_id,
+        )
+        invoices = PaymentForm._open_invoice_queryset(user=request.user, student_id=student.pk)
+        data = [
+            {
+                "id": invoice.pk,
+                "label": PaymentForm._invoice_label(invoice),
+            }
+            for invoice in invoices
+        ]
+        return JsonResponse({"student_id": student.pk, "invoices": data})
 
 
 class StudentCreateView(BaseCreateView):

@@ -63,6 +63,11 @@ urlpatterns = [
         views.ProspectListConvertToStudentView.as_view(),
         name="prospect-convert-to-student",
     ),
+    path(
+        "payments/invoices-for-student/<int:student_id>/",
+        views.PaymentInvoicesForStudentView.as_view(),
+        name="payment-invoices-for-student",
+    ),
 ]
 
 

@@ -1,1 +1,138 @@
-{% extends "core/crud/model_form.html" %}
+{% extends "core/crud/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% if object %}Edit{% else %}Create{% endif %} {{ model_name }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">
+    {% if object %}Edit #{{ object.pk }}{% else %}Create{% endif %}
+  </li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">{% if object %}Edit{% else %}Create{% endif %} {{ model_name }}</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
+    {% if object %}
+      <a class="btn btn-outline-primary" href="{% url detail_url_name object.pk %}">View details</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if no_open_invoices and not object %}
+  <div class="alert alert-warning" role="alert">
+    No open invoices are available for this student/owner. Payment creation is disabled.
+  </div>
+{% endif %}
+
+{% if selected_student and not object %}
+  <div class="alert alert-info py-2 mb-3" role="status">
+    Selected student: <strong>{{ selected_student.prospect|default:selected_student }}</strong>
+  </div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {{ form|crispy }}
+      <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-primary" type="submit" {% if no_open_invoices and not object %}disabled{% endif %}>
+          Save
+        </button>
+        {% if object %}
+          <a class="btn btn-outline-secondary" href="{% url detail_url_name object.pk %}">Cancel</a>
+        {% else %}
+          <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Cancel</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const studentSelect = document.getElementById("id_student");
+    const invoiceSelect = document.getElementById("id_invoice");
+    if (!studentSelect || !invoiceSelect) return;
+
+    const createMode = {{ object|yesno:"false,true" }};
+    if (!createMode) return;
+
+    const baseUrl = "{{ invoice_lookup_base_url }}";
+    const amountPaid = document.getElementById("id_amount_paid");
+    const paymentMethod = document.getElementById("id_payment_method");
+    const confirmationStatus = document.getElementById("id_confirmation_status");
+
+    function disablePaymentInputs(disabled) {
+      [amountPaid, paymentMethod, confirmationStatus].forEach((el) => {
+        if (el) el.disabled = disabled;
+      });
+    }
+
+    function setInvoiceOptions(options, placeholder) {
+      invoiceSelect.innerHTML = "";
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "";
+      emptyOption.textContent = placeholder || "---------";
+      invoiceSelect.appendChild(emptyOption);
+      options.forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item.id;
+        option.textContent = item.label;
+        invoiceSelect.appendChild(option);
+      });
+    }
+
+    async function refreshInvoices(studentId) {
+      setInvoiceOptions([], "Loading invoices...");
+      invoiceSelect.disabled = true;
+      disablePaymentInputs(true);
+
+      if (!studentId) {
+        setInvoiceOptions([], "Select a student to see available invoices.");
+        invoiceSelect.disabled = true;
+        disablePaymentInputs(true);
+        return;
+      }
+
+      const url = baseUrl.replace(/0\/?$/, studentId + "/");
+      try {
+        const response = await fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+        if (!response.ok) throw new Error("Failed request");
+        const payload = await response.json();
+        const invoices = payload.invoices || [];
+        if (invoices.length === 0) {
+          setInvoiceOptions([], "No open invoices for selected student.");
+          invoiceSelect.disabled = true;
+          disablePaymentInputs(true);
+          return;
+        }
+        setInvoiceOptions(invoices, "---------");
+        invoiceSelect.disabled = false;
+        disablePaymentInputs(false);
+        if (invoices.length === 1) {
+          invoiceSelect.value = String(invoices[0].id);
+        }
+      } catch (err) {
+        setInvoiceOptions([], "Unable to load invoices.");
+        invoiceSelect.disabled = true;
+        disablePaymentInputs(true);
+      }
+    }
+
+    studentSelect.addEventListener("change", function () {
+      invoiceSelect.value = "";
+      refreshInvoices(this.value);
+    });
+
+    if (!studentSelect.value) {
+      setInvoiceOptions([], "Select a student to see available invoices.");
+      invoiceSelect.disabled = true;
+      disablePaymentInputs(true);
+    }
+  })();
+</script>
+{% endblock %}

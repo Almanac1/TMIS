@@ -2,6 +2,8 @@ from datetime import datetime, time
 from decimal import Decimal
 
 from django import forms
+from django.db.models import DecimalField, ExpressionWrapper, F, Sum, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from .models import (
@@ -12,6 +14,7 @@ from .models import (
     InterestLevel,
     Location,
     Enrollment,
+    Invoice,
     Payment,
     Prospect,
     ProspectStatus,
@@ -234,9 +237,25 @@ class InvoicePaymentForm(forms.ModelForm):
 
 
 class PaymentForm(forms.ModelForm):
+    student = forms.ModelChoiceField(
+        queryset=Student.objects.none(),
+        required=False,
+        help_text="Select a student to narrow invoice options.",
+    )
+
     class Meta:
         model = Payment
-        fields = "__all__"
+        fields = (
+            "student",
+            "invoice",
+            "payment_date",
+            "amount_paid",
+            "payment_method",
+            "reference_number",
+            "confirmation_status",
+            "notes",
+            "owner",
+        )
         widgets = {
             "payment_date": forms.DateTimeInput(
                 attrs={"type": "datetime-local"},
@@ -245,14 +264,196 @@ class PaymentForm(forms.ModelForm):
             "notes": forms.Textarea(attrs={"rows": 3}),
         }
 
+    @staticmethod
+    def _open_invoice_queryset(*, user, student_id=None):
+        queryset = (
+            Invoice.objects.select_related(
+                "enrollment__student__prospect__contact",
+                "enrollment__session__course",
+            )
+            .annotate(
+                amount_paid=Coalesce(
+                    Sum("payments__amount_paid"),
+                    Value(Decimal("0.00")),
+                    output_field=DecimalField(max_digits=10, decimal_places=2),
+                )
+            )
+            .annotate(
+                outstanding_balance=ExpressionWrapper(
+                    F("total_amount") - F("amount_paid"),
+                    output_field=DecimalField(max_digits=10, decimal_places=2),
+                )
+            )
+            .filter(outstanding_balance__gt=Decimal("0.00"))
+        )
+        if user and getattr(user, "is_authenticated", False) and not (user.is_staff or user.is_superuser):
+            queryset = queryset.filter(owner=user)
+        if student_id:
+            queryset = queryset.filter(enrollment__student_id=student_id)
+        return queryset.order_by("-issue_date", "-pk")
+
+    @staticmethod
+    def _invoice_label(invoice):
+        student_name = str(invoice.enrollment.student.prospect)
+        course_name = invoice.enrollment.session.course.name
+        total = (invoice.total_amount or Decimal("0.00")).quantize(Decimal("0.01"))
+        paid = (invoice.amount_paid or Decimal("0.00")).quantize(Decimal("0.01"))
+        outstanding = (invoice.outstanding_balance or Decimal("0.00")).quantize(Decimal("0.01"))
+        return (
+            f"{invoice.invoice_number} | {student_name} | {course_name} | "
+            f"Total ${total} | Paid ${paid} | Due ${outstanding}"
+        )
+
     def __init__(self, *args, **kwargs):
+        self.request_user = kwargs.pop("request_user", None)
+        self.selected_student_id = kwargs.pop("selected_student_id", None)
         super().__init__(*args, **kwargs)
         self.fields["payment_date"].input_formats = ("%Y-%m-%dT%H:%M",)
+        self.fields["student"].queryset = Student.objects.select_related(
+            "prospect__contact"
+        ).order_by("prospect__contact__first_name", "prospect__contact__last_name")
+
+        if self.request_user and not (self.request_user.is_staff or self.request_user.is_superuser):
+            self.fields["student"].queryset = self.fields["student"].queryset.filter(
+                owner=self.request_user
+            )
+
+        bound_student = (
+            self.data.get("student")
+            if self.is_bound
+            else self.selected_student_id or self.initial.get("student")
+        )
+        if bound_student and str(bound_student).isdigit():
+            self.selected_student_id = int(bound_student)
+            self.initial["student"] = int(bound_student)
+        is_create = not (self.instance and self.instance.pk)
+        self.no_student_selected = is_create and not self.selected_student_id
+        if self.no_student_selected:
+            self._allowed_open_invoice_ids = set()
+            self.fields["invoice"].queryset = Invoice.objects.none()
+            self.fields["invoice"].choices = [("", "---------")]
+            self.fields["invoice"].disabled = True
+            self.fields["invoice"].help_text = "Select a student to see available invoices."
+            self.no_open_invoices = False
+        else:
+            open_invoices = self._open_invoice_queryset(
+                user=self.request_user,
+                student_id=self.selected_student_id,
+            )
+            open_ids = list(open_invoices.values_list("id", flat=True))
+            if self.instance and self.instance.pk and self.instance.invoice_id:
+                if self.instance.invoice_id not in open_ids:
+                    open_ids.append(self.instance.invoice_id)
+                open_invoices = (
+                    Invoice.objects.filter(pk__in=open_ids)
+                    .select_related(
+                        "enrollment__student__prospect__contact",
+                        "enrollment__session__course",
+                    )
+                    .annotate(
+                        amount_paid=Coalesce(
+                            Sum("payments__amount_paid"),
+                            Value(Decimal("0.00")),
+                            output_field=DecimalField(max_digits=10, decimal_places=2),
+                        )
+                    )
+                    .annotate(
+                        outstanding_balance=ExpressionWrapper(
+                            F("total_amount") - F("amount_paid"),
+                            output_field=DecimalField(max_digits=10, decimal_places=2),
+                        )
+                    )
+                    .order_by("-issue_date", "-pk")
+                )
+
+            self._allowed_open_invoice_ids = set(open_invoices.values_list("id", flat=True))
+            self.fields["invoice"].queryset = open_invoices
+            self.fields["invoice"].choices = [
+                ("", "---------"),
+                *[(invoice.pk, self._invoice_label(invoice)) for invoice in open_invoices],
+            ]
+
+            if self.selected_student_id and open_invoices.count() == 1 and not self.is_bound:
+                self.initial["invoice"] = open_invoices.first().pk
+
+            open_invoice_count = self._open_invoice_queryset(
+                user=self.request_user,
+                student_id=self.selected_student_id,
+            ).count()
+            self.no_open_invoices = open_invoice_count == 0 and not (self.instance and self.instance.pk)
+            if self.no_open_invoices:
+                self.fields["invoice"].help_text = (
+                    "No open invoices found for this selection. Create or adjust an invoice first."
+                )
+                for field_name in ("invoice", "amount_paid", "payment_method", "confirmation_status"):
+                    self.fields[field_name].disabled = True
+
         if self.instance and self.instance.pk and self.instance.payment_date:
             payment_date_value = self.instance.payment_date
             if timezone.is_aware(payment_date_value):
                 payment_date_value = timezone.localtime(payment_date_value)
             self.initial["payment_date"] = payment_date_value.strftime("%Y-%m-%dT%H:%M")
+
+    def clean_invoice(self):
+        invoice = self.cleaned_data.get("invoice")
+        student = self.cleaned_data.get("student")
+        if not invoice:
+            return invoice
+
+        if (
+            self.request_user
+            and getattr(self.request_user, "is_authenticated", False)
+            and not (self.request_user.is_staff or self.request_user.is_superuser)
+            and invoice.owner_id != self.request_user.id
+        ):
+            raise forms.ValidationError("Selected invoice does not belong to your account.")
+
+        if student and invoice.enrollment.student_id != student.pk:
+            raise forms.ValidationError("Selected invoice does not belong to the selected student.")
+        return invoice
+
+    def clean(self):
+        cleaned = super().clean()
+        if self.no_student_selected:
+            self.add_error("student", "Select a student to see available invoices.")
+            return cleaned
+        if self.no_open_invoices and not (self.instance and self.instance.pk):
+            raise forms.ValidationError(
+                "No open invoices available for payment creation with the current selection."
+            )
+
+        invoice = cleaned.get("invoice")
+        amount_paid = cleaned.get("amount_paid")
+
+        if (
+            invoice
+            and not (self.instance and self.instance.pk)
+            and self._allowed_open_invoice_ids
+            and invoice.pk not in self._allowed_open_invoice_ids
+        ):
+            self.add_error("invoice", "Select a valid open invoice for this student/owner.")
+
+        if invoice and amount_paid:
+            paid_queryset = invoice.payments.all()
+            if self.instance and self.instance.pk:
+                paid_queryset = paid_queryset.exclude(pk=self.instance.pk)
+            paid_total = (
+                paid_queryset.aggregate(
+                    total=Coalesce(
+                        Sum("amount_paid"),
+                        Value(Decimal("0.00")),
+                        output_field=DecimalField(max_digits=10, decimal_places=2),
+                    )
+                )["total"]
+                or Decimal("0.00")
+            )
+            outstanding = (invoice.total_amount or Decimal("0.00")) - paid_total
+            if amount_paid > outstanding:
+                self.add_error(
+                    "amount_paid",
+                    f"Amount cannot exceed outstanding balance of ${outstanding.quantize(Decimal('0.01'))}.",
+                )
+        return cleaned
 
 
 class CommunicationForm(forms.ModelForm):
