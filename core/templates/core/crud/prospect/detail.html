@@ -1,0 +1,115 @@
+{% extends "core/crud/base.html" %}
+
+{% block title %}Prospect #{{ object.pk }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">Detail #{{ object.pk }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="crud-list-shell">
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">{{ object }}</h1>
+      <div class="d-flex gap-2 flex-wrap mt-1">
+        {% if object.status == "bad_lead" %}
+          <span class="badge text-bg-danger">Bad Lead</span>
+        {% else %}
+          <span class="badge text-bg-secondary">{{ object.get_status_display }}</span>
+        {% endif %}
+        {% if object.is_archived %}
+          <span class="badge text-bg-warning">Archived</span>
+        {% else %}
+          <span class="badge text-bg-success">Active</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
+      <a class="btn btn-secondary" href="{% url update_url_name object.pk %}">Edit</a>
+      {% if not has_student_record %}
+        <form method="post" action="{% url 'core:prospect-convert-to-student' object.pk %}" class="d-inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-outline-primary">Convert to Student</button>
+        </form>
+      {% else %}
+        <a class="btn btn-outline-success" href="{% url 'core:student-detail' object.student_record.pk %}">Open Student</a>
+      {% endif %}
+      {% if can_delete %}
+        <a class="btn btn-danger" href="{% url delete_url_name object.pk %}">Delete</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-5">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h2 class="h6 text-uppercase text-muted mb-3">Contact Attempt Summary</h2>
+          <div class="display-6 fw-bold mb-1">{{ contact_attempt_count }}</div>
+          <div class="text-muted small">Total contact attempts logged for this prospect.</div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mt-3">
+        <div class="table-responsive">
+          <table class="table table-striped mb-0">
+            <tbody>
+              {% for label, value in primary_fields %}
+                <tr>
+                  <th style="width: 38%;">{{ label }}</th>
+                  <td>
+                    {% if label == "Last Contacted" and value %}
+                      {{ value|date:"M d, Y H:i" }}
+                    {% elif label == "Created At" and value %}
+                      {{ value|date:"M d, Y H:i" }}
+                    {% else %}
+                      {{ value|default:"-" }}
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <details class="card shadow-sm mt-3">
+        <summary class="card-header">Secondary Details</summary>
+        <div class="table-responsive">
+          <table class="table table-striped mb-0">
+            <tbody>
+              {% for label, value in secondary_fields %}
+                <tr>
+                  <th style="width: 38%;">{{ label }}</th>
+                  <td>{{ value|default:"-" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="card shadow-sm">
+        <div class="card-header">Communication History</div>
+        <div class="list-group list-group-flush">
+          {% for comm in communications %}
+            <div class="list-group-item">
+              <div class="fw-semibold">{{ comm.subject|default:comm.get_communication_type_display }}</div>
+              <div class="small text-muted">
+                {{ comm.created_at|date:"M d, Y H:i" }} · {{ comm.get_channel_display }} · {{ comm.get_delivery_status_display }}
+              </div>
+              {% if comm.body %}
+                <div class="mt-2">{{ comm.body|linebreaksbr }}</div>
+              {% endif %}
+            </div>
+          {% empty %}
+            <div class="list-group-item text-muted">No communications recorded yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,109 @@
+{% extends "core/crud/base.html" %}
+
+{% block title %}{% if object %}Edit{% else %}Create{% endif %} {{ model_name }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">{% if object %}Edit #{{ object.pk }}{% else %}Create{% endif %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="crud-list-shell">
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">{% if object %}Edit{% else %}Create{% endif %} {{ model_name }}</h1>
+      <p class="page-subtitle mb-0">Capture communication details with clear recipient context.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
+      {% if object %}<a class="btn btn-outline-primary" href="{% url detail_url_name object.pk %}">View details</a>{% endif %}
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      {% if recipient_prospect %}
+      <div class="alert alert-info mb-3">
+        <div class="fw-semibold mb-1">Recipient Preselected</div>
+        <div>
+          Prospect: {{ recipient_prospect }}
+          {% if recipient_contact and recipient_contact.email %} | Email: {{ recipient_contact.email }}{% endif %}
+          {% if recipient_contact and recipient_contact.phone_number %} | Phone: {{ recipient_contact.phone_number }}{% endif %}
+        </div>
+      </div>
+      {% endif %}
+      <form method="post" novalidate>
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+          <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <h2 class="h6 text-uppercase text-muted mb-2">Who</h2>
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">{{ form.recipient_type.label_tag }} {{ form.recipient_type }}</div>
+          <div class="col-md-4" id="prospect-field-wrap">{{ form.prospect.label_tag }} {{ form.prospect }}</div>
+          <div class="col-md-4" id="student-field-wrap">{{ form.student.label_tag }} {{ form.student }}</div>
+          <div class="col-12">{{ form.enrollment.label_tag }} {{ form.enrollment }}{% if form.enrollment.help_text %}<div class="form-text">{{ form.enrollment.help_text }}</div>{% endif %}</div>
+        </div>
+
+        <h2 class="h6 text-uppercase text-muted mb-2">What</h2>
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">{{ form.channel.label_tag }} {{ form.channel }}</div>
+          <div class="col-md-4">{{ form.communication_type.label_tag }} {{ form.communication_type }}</div>
+          <div class="col-md-4">{{ form.delivery_status.label_tag }} {{ form.delivery_status }}</div>
+          <div class="col-12">{{ form.subject.label_tag }} {{ form.subject }}{% if form.subject.help_text %}<div class="form-text">{{ form.subject.help_text }}</div>{% endif %}</div>
+          <div class="col-12">{{ form.body.label_tag }} {{ form.body }}{% if form.body.help_text %}<div class="form-text">{{ form.body.help_text }}</div>{% endif %}</div>
+        </div>
+
+        <h2 class="h6 text-uppercase text-muted mb-2">When</h2>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">{{ form.sent_at.label_tag }} {{ form.sent_at }}</div>
+          <div class="col-md-6">{{ form.owner.label_tag }} {{ form.owner }}{% if form.owner.help_text %}<div class="form-text">{{ form.owner.help_text }}</div>{% endif %}</div>
+        </div>
+
+        <button class="btn btn-link p-0 mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#advanced-comm-fields" aria-expanded="false" aria-controls="advanced-comm-fields">
+          Advanced fields
+        </button>
+        <div class="collapse" id="advanced-comm-fields">
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">{{ form.provider_status.label_tag }} {{ form.provider_status }}{% if form.provider_status.help_text %}<div class="form-text">{{ form.provider_status.help_text }}</div>{% endif %}</div>
+            <div class="col-md-3">{{ form.related_entity_type.label_tag }} {{ form.related_entity_type }}{% if form.related_entity_type.help_text %}<div class="form-text">{{ form.related_entity_type.help_text }}</div>{% endif %}</div>
+            <div class="col-md-3">{{ form.related_entity_id.label_tag }} {{ form.related_entity_id }}{% if form.related_entity_id.help_text %}<div class="form-text">{{ form.related_entity_id.help_text }}</div>{% endif %}</div>
+            <div class="col-12">{{ form.notes.label_tag }} {{ form.notes }}</div>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 mt-3">
+          <button class="btn btn-primary" type="submit">Save</button>
+          {% if object %}
+            <a class="btn btn-outline-secondary" href="{% url detail_url_name object.pk %}">Cancel</a>
+          {% else %}
+            <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Cancel</a>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    var recipientType = document.getElementById("id_recipient_type");
+    var prospectWrap = document.getElementById("prospect-field-wrap");
+    var studentWrap = document.getElementById("student-field-wrap");
+
+    function toggleRecipientFields() {
+      if (!recipientType) return;
+      var value = recipientType.value;
+      if (prospectWrap) prospectWrap.style.display = value === "prospect" ? "block" : "none";
+      if (studentWrap) studentWrap.style.display = value === "student" ? "block" : "none";
+    }
+
+    if (recipientType) {
+      recipientType.addEventListener("change", toggleRecipientFields);
+      toggleRecipientFields();
+    }
+  })();
+</script>
+{% endblock %}

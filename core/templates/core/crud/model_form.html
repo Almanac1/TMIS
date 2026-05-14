@@ -1,0 +1,38 @@
+{% extends "core/crud/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% if object %}Edit{% else %}Create{% endif %} {{ model_name }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">
+    {% if object %}Edit #{{ object.pk }}{% else %}Create{% endif %}
+  </li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">{% if object %}Edit{% else %}Create{% endif %} {{ model_name }}</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
+    {% if object %}
+      <a class="btn btn-outline-primary" href="{% url detail_url_name object.pk %}">View details</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {{ form|crispy }}
+      <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-primary" type="submit">Save</button>
+        {% if object %}
+          <a class="btn btn-outline-secondary" href="{% url detail_url_name object.pk %}">Cancel</a>
+        {% else %}
+          <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Cancel</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

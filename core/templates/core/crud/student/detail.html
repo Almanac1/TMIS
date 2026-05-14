@@ -1,0 +1,777 @@
+{% extends "core/crud/base.html" %}
+
+{% block title %}Student Profile · {{ object.prospect|default:object }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">Student Profile</li>
+{% endblock %}
+
+{% block content %}
+{% with student=object %}
+<div class="student-profile-page">
+  <header class="sp-shell sp-header" aria-label="Student profile header">
+    <div class="sp-header-identity">
+      <div class="sp-avatar-wrap" aria-label="Student profile image">
+        {% if student_image_url %}
+          <img src="{{ student_image_url }}" alt="{{ student.prospect|default:'Student' }} profile image" class="sp-avatar-img">
+        {% elif student.profile_photo %}
+          <img src="{{ student.profile_photo.url }}" alt="{{ student.prospect|default:'Student' }} profile image" class="sp-avatar-img">
+        {% elif student.photo %}
+          <img src="{{ student.photo.url }}" alt="{{ student.prospect|default:'Student' }} profile image" class="sp-avatar-img">
+        {% elif student.prospect.photo %}
+          <img src="{{ student.prospect.photo.url }}" alt="{{ student.prospect|default:'Student' }} profile image" class="sp-avatar-img">
+        {% else %}
+          <div class="sp-avatar-fallback" role="img" aria-label="No profile image available">
+            {% if student.first_name or student.last_name %}
+              <span>{{ student.first_name|default:""|slice:":1" }}{{ student.last_name|default:""|slice:":1" }}</span>
+            {% else %}
+              <i class="bi bi-person"></i>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="sp-header-main">
+        <p class="sp-kicker">Student Profile</p>
+        <h1 class="sp-name">{{ student.prospect }}</h1>
+        <div class="sp-meta-row">
+          <span class="sp-id">ID #{{ student.pk }}</span>
+          {% with status=student.enrollment_status|lower %}
+            {% if status == "active" or status == "enrolled" %}
+              <span class="sp-status-badge is-active">Active</span>
+            {% elif status == "inactive" %}
+              <span class="sp-status-badge is-inactive">Inactive</span>
+            {% elif status == "prospect" or status == "pending" %}
+              <span class="sp-status-badge is-prospect">Prospect</span>
+            {% else %}
+              <span class="sp-status-badge is-converted">Converted</span>
+            {% endif %}
+          {% endwith %}
+        </div>
+        <ul class="sp-contact-list" aria-label="Student contact and enrollment details">
+          <li>
+            <span class="sp-contact-label">Email</span>
+            <span class="sp-contact-value">{{ student.email|default:"-" }}</span>
+          </li>
+          <li>
+            <span class="sp-contact-label">Phone</span>
+            <span class="sp-contact-value">{{ student.phone|default:"-" }}</span>
+          </li>
+          <li>
+            <span class="sp-contact-label">Enrollment Date</span>
+            <span class="sp-contact-value">{{ student.created_at|date:"M d, Y" }}</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="sp-actions" aria-label="Quick actions">
+      <a class="btn btn-primary" href="{% url update_url_name student.pk %}">Edit Student</a>
+      <a class="btn btn-outline-primary" href="{% url 'core:payment-create' %}?student={{ student.pk }}">Add Payment</a>
+      <a class="btn btn-outline-primary" href="{% url update_url_name student.pk %}">Assign Governor</a>
+      <a class="btn btn-outline-primary" href="{% url 'core:communication-create' %}?student={{ student.pk }}">Add Note</a>
+    </div>
+  </header>
+
+  <section class="sp-shell" aria-labelledby="overview-heading">
+    <div class="sp-section-head">
+      <h2 id="overview-heading">Overview</h2>
+    </div>
+    <div class="sp-metrics-grid">
+      <article class="sp-metric-card">
+        <p class="sp-metric-label">Total Courses Enrolled</p>
+        <p class="sp-metric-value">{{ student_metrics.total_courses }}</p>
+      </article>
+      <article class="sp-metric-card">
+        <p class="sp-metric-label">Total Amount Paid</p>
+        <p class="sp-metric-value">${{ student_metrics.total_amount_paid|floatformat:2 }}</p>
+      </article>
+      <article class="sp-metric-card sp-metric-card-alert">
+        <p class="sp-metric-label">Outstanding Balance</p>
+        <p class="sp-metric-value sp-text-warning">${{ student_metrics.outstanding_balance|floatformat:2 }}</p>
+      </article>
+      <article class="sp-metric-card">
+        <p class="sp-metric-label">Assigned Governors</p>
+        <p class="sp-metric-value">{{ student_metrics.assigned_teachers_count }}</p>
+      </article>
+      <article class="sp-metric-card">
+        <p class="sp-metric-label">Last Activity</p>
+        <p class="sp-metric-value">{{ student_metrics.last_activity|date:"M d, Y" }}</p>
+      </article>
+    </div>
+  </section>
+
+  <div class="sp-content-grid">
+    <div class="sp-primary-column">
+      <section class="sp-shell" aria-labelledby="courses-heading">
+        <div class="sp-section-head">
+          <h2 id="courses-heading">Courses</h2>
+        </div>
+        <div class="table-responsive">
+          <table class="table sp-table align-middle">
+            <thead>
+              <tr>
+                <th scope="col">Course</th>
+                <th scope="col">Start Date</th>
+                <th scope="col">End Date</th>
+                <th scope="col">Status</th>
+                <th scope="col">Assigned Governor</th>
+                <th scope="col">Progress / Attendance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if course_history %}
+                {% for course in course_history %}
+                  <tr>
+                    <td>{{ course.name }}</td>
+                    <td>{{ course.start_date|date:"M d, Y" }}</td>
+                    <td>{{ course.end_date|date:"M d, Y" }}</td>
+                    <td><span class="sp-chip">{{ course.status }}</span></td>
+                    <td>{{ course.teacher|default:"-" }}</td>
+                    <td>{{ course.progress }}</td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="6" class="text-muted">No courses available for this student</td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="sp-shell" aria-labelledby="payments-heading">
+        <div class="sp-section-head">
+          <h2 id="payments-heading">Invoices</h2>
+        </div>
+        <div class="table-responsive">
+          <table class="table sp-table align-middle">
+            <thead>
+              <tr>
+                <th scope="col">Invoice / Reference</th>
+                <th scope="col">Date</th>
+                <th scope="col">Amount Paid</th>
+                <th scope="col">Status</th>
+                <th scope="col">Balance Due</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if invoices %}
+                {% for invoice in invoices %}
+                  <tr class="{% if invoice.balance_due > 0 and invoice.due_date and invoice.due_date < today %}sp-row-overdue{% elif invoice.balance_due > 0 %}sp-row-partial{% endif %}">
+                    <td>
+                      <a class="sp-invoice-link" href="{% url 'core:invoice-detail' invoice.pk %}">
+                        {{ invoice.invoice_number }}
+                      </a>
+                    </td>
+                    <td>{{ invoice.issue_date|date:"M d, Y" }}</td>
+                    <td>${{ invoice.amount_paid|floatformat:2 }}</td>
+                    <td>
+                      <span class="sp-chip {% if invoice.balance_due > 0 and invoice.due_date and invoice.due_date < today %}sp-chip-overdue{% elif invoice.balance_due > 0 %}sp-chip-partial{% endif %}">
+                        {{ invoice.get_status_display|default:invoice.status }}
+                      </span>
+                    </td>
+                    <td>${{ invoice.balance_due|floatformat:2 }}</td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="5" class="text-muted">No invoices available for this student</td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="sp-shell" aria-labelledby="teachers-heading">
+        <div class="sp-section-head">
+          <h2 id="teachers-heading">Governors</h2>
+        </div>
+        <div class="table-responsive">
+          <table class="table sp-table align-middle">
+            <thead>
+              <tr>
+                <th scope="col">Governor</th>
+                <th scope="col">Role</th>
+                <th scope="col">Course Taught</th>
+                <th scope="col">Date Assigned</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if teacher_history %}
+                {% for teacher in teacher_history %}
+                  <tr>
+                    <td>{{ teacher.name }}</td>
+                    <td>{{ teacher.role }}</td>
+                    <td>{{ teacher.course }}</td>
+                    <td>{{ teacher.date_assigned|date:"M d, Y" }}</td>
+                    <td><span class="sp-chip {{ teacher.status_class }}">{{ teacher.status }}</span></td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="5" class="text-muted">No governors linked to this student yet</td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="sp-shell" aria-labelledby="timeline-heading">
+        <div class="sp-section-head">
+          <h2 id="timeline-heading">Notes & Timeline</h2>
+        </div>
+        <ol class="sp-timeline" aria-label="Recent student activity timeline">
+          {% if timeline_events %}
+            {% for event in timeline_events %}
+              <li>
+                <p class="sp-timeline-title">{{ event.title }}</p>
+                <p class="sp-timeline-meta">{{ event.date|date:"M d, Y" }} · {{ event.author|default:"TMIS" }}</p>
+                <p class="sp-timeline-note">{{ event.note|default:"-" }}</p>
+              </li>
+            {% endfor %}
+          {% else %}
+            <li>
+              <p class="sp-timeline-title">No timeline activity yet</p>
+              <p class="sp-timeline-meta">-</p>
+              <p class="sp-timeline-note">Recent follow-ups, invoices, and enrollment updates will appear here.</p>
+            </li>
+          {% endif %}
+        </ol>
+      </section>
+    </div>
+
+    <aside class="sp-sidebar-column" aria-label="Student summary sidebar">
+      <section class="sp-shell sp-sidebar-card">
+        <h2>Summary</h2>
+        <dl class="sp-summary-list">
+          <div>
+            <dt>Primary Governor</dt>
+            <dd>{{ student_summary.primary_teacher|default:"-" }}</dd>
+          </div>
+          <div>
+            <dt>Next Scheduled Session</dt>
+            <dd>{{ student_summary.next_session|date:"M d, Y · g:i A"|default:"-" }}</dd>
+          </div>
+          <div>
+            <dt>Payment Status</dt>
+            <dd><span class="sp-chip {{ student_summary.payment_status_class }}">{{ student_summary.payment_status }}</span></dd>
+          </div>
+          <div>
+            <dt>Tags</dt>
+            <dd class="sp-tag-wrap">
+              {% if student_summary.tags %}
+                {% for tag in student_summary.tags %}
+                  <span class="sp-tag">{{ tag }}</span>
+                {% endfor %}
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </dd>
+          </div>
+        </dl>
+      </section>
+    </aside>
+  </div>
+</div>
+{% endwith %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .student-profile-page {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .sp-shell {
+    border: 1px solid #e8ebf3;
+    border-radius: 16px;
+    background: #fff;
+    padding: 1rem;
+    box-shadow: 0 1px 2px rgba(21, 32, 54, 0.04);
+  }
+
+  .sp-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.15rem;
+  }
+
+  .sp-header-identity {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-width: min(100%, 540px);
+    flex: 1 1 540px;
+  }
+
+  .sp-avatar-wrap {
+    width: 82px;
+    height: 82px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+    overflow: hidden;
+    border: 1px solid #dde3ef;
+    background: linear-gradient(155deg, #f8f4fa 0%, #f2f6fc 100%);
+    display: grid;
+    place-items: center;
+  }
+
+  .sp-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .sp-avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    color: #4a566f;
+    font-weight: 700;
+    font-size: 1.15rem;
+    letter-spacing: 0.02em;
+  }
+
+  .sp-avatar-fallback i {
+    font-size: 1.45rem;
+    color: #73819c;
+  }
+
+  .sp-header-main {
+    min-width: 0;
+  }
+
+  .sp-kicker {
+    margin: 0;
+    font-size: 0.73rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--crm-muted);
+    font-weight: 700;
+  }
+
+  .sp-name {
+    margin: 0.18rem 0 0;
+    font-size: clamp(1.4rem, 2.5vw, 2rem);
+    line-height: 1.15;
+    font-weight: 700;
+  }
+
+  .sp-meta-row {
+    margin-top: 0.42rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+  }
+
+  .sp-id {
+    color: var(--crm-muted);
+    font-size: 0.86rem;
+    font-weight: 600;
+  }
+
+  .sp-status-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    font-size: 0.73rem;
+    padding: 0.2rem 0.58rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+  }
+
+  .sp-status-badge.is-active {
+    color: #0f6938;
+    background: #eaf8f0;
+    border-color: #bedfcc;
+  }
+
+  .sp-status-badge.is-prospect {
+    color: #85500d;
+    background: #fff5e6;
+    border-color: #f1d9b7;
+  }
+
+  .sp-status-badge.is-inactive {
+    color: #667186;
+    background: #f2f4f8;
+    border-color: #dce0e9;
+  }
+
+  .sp-status-badge.is-converted {
+    color: #4f2d73;
+    background: #f4ebfc;
+    border-color: #ddcaf2;
+  }
+
+  .sp-contact-list {
+    margin: 0.75rem 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.62rem;
+  }
+
+  .sp-contact-list li {
+    border: 1px solid #edf0f6;
+    border-radius: 10px;
+    padding: 0.5rem 0.6rem;
+    background: #fafcff;
+    min-width: 0;
+  }
+
+  .sp-contact-label {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--crm-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.2rem;
+    font-weight: 700;
+  }
+
+  .sp-contact-value {
+    display: block;
+    font-size: 0.88rem;
+    color: var(--crm-text);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .sp-actions {
+    flex: 0 1 390px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: start;
+    gap: 0.5rem;
+    min-width: min(100%, 320px);
+  }
+
+  .sp-actions .btn {
+    padding-top: 0.46rem;
+    padding-bottom: 0.46rem;
+    font-size: 0.87rem;
+    font-weight: 600;
+  }
+
+  .sp-content-grid {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .sp-primary-column {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .sp-sidebar-column {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .sp-section-head {
+    margin-bottom: 0.85rem;
+  }
+
+  .sp-section-head h2,
+  .sp-sidebar-card h2 {
+    margin: 0;
+    font-size: 1.02rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  .sp-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .sp-metric-card {
+    border: 1px solid #ebedf4;
+    border-radius: 12px;
+    padding: 0.78rem;
+    background: #fbfcff;
+    min-height: 98px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .sp-metric-card-alert {
+    background: #fffaf4;
+    border-color: #f4ddbf;
+  }
+
+  .sp-metric-label {
+    margin: 0;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.045em;
+    color: var(--crm-muted);
+    font-weight: 700;
+  }
+
+  .sp-metric-value {
+    margin: 0.35rem 0 0;
+    font-size: 1.18rem;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  .sp-text-warning {
+    color: #8e4d12;
+  }
+
+  .sp-table {
+    margin: 0;
+    font-size: 0.89rem;
+  }
+
+  .sp-table thead th {
+    font-size: 0.73rem;
+    text-transform: uppercase;
+    letter-spacing: 0.055em;
+    color: #73819c;
+    border-top: 0;
+    border-bottom-width: 1px;
+    border-color: #e8ecf5;
+    padding: 0.7rem 0.6rem;
+    white-space: nowrap;
+  }
+
+  .sp-table tbody td {
+    border-color: #edf1f7;
+    padding: 0.72rem 0.6rem;
+    vertical-align: middle;
+  }
+
+  .sp-table tbody tr {
+    transition: background-color 0.15s ease;
+  }
+
+  .sp-table tbody tr:hover {
+    background: #fafcff;
+  }
+
+  .sp-chip {
+    display: inline-flex;
+    border: 1px solid #cfe2d7;
+    background: #edf9f1;
+    color: #1d6f42;
+    padding: 0.14rem 0.52rem;
+    border-radius: 999px;
+    font-size: 0.73rem;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .sp-chip-soft {
+    background: #f3f6fb;
+    color: #5a6680;
+    border-color: #dce2ed;
+  }
+
+  .sp-chip-partial {
+    background: #fff6eb;
+    color: #975111;
+    border-color: #f1d6b4;
+  }
+
+  .sp-chip-overdue {
+    background: #feeeee;
+    color: #9d1e1e;
+    border-color: #f2c3c3;
+  }
+
+  .sp-invoice-link {
+    color: var(--crm-primary);
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .sp-invoice-link:hover,
+  .sp-invoice-link:focus {
+    color: var(--crm-primary-strong);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .sp-row-overdue td {
+    background: #fff8f8;
+  }
+
+  .sp-row-partial td {
+    background: #fffdf8;
+  }
+
+  .sp-timeline {
+    margin: 0.1rem 0 0;
+    padding: 0;
+    list-style: none;
+    border-left: 2px solid #e7ebf4;
+    margin-left: 0.42rem;
+  }
+
+  .sp-timeline li {
+    position: relative;
+    padding: 0 0 1rem 1rem;
+  }
+
+  .sp-timeline li:last-child {
+    padding-bottom: 0;
+  }
+
+  .sp-timeline li::before {
+    content: "";
+    position: absolute;
+    left: -0.43rem;
+    top: 0.23rem;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    background: var(--crm-primary);
+    box-shadow: 0 0 0 3px #f5edf8;
+  }
+
+  .sp-timeline-title {
+    margin: 0;
+    font-size: 0.92rem;
+    font-weight: 600;
+  }
+
+  .sp-timeline-meta {
+    margin: 0.14rem 0;
+    font-size: 0.78rem;
+    color: var(--crm-muted);
+  }
+
+  .sp-timeline-note {
+    margin: 0;
+    font-size: 0.88rem;
+    color: #364055;
+  }
+
+  .sp-sidebar-card {
+    background: #fcfdff;
+  }
+
+  .sp-summary-list {
+    margin: 0.7rem 0 0;
+    display: grid;
+    gap: 0.82rem;
+  }
+
+  .sp-summary-list div {
+    padding-bottom: 0.72rem;
+    border-bottom: 1px solid #e8edf5;
+  }
+
+  .sp-summary-list div:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .sp-summary-list dt {
+    margin: 0;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--crm-muted);
+    font-weight: 700;
+  }
+
+  .sp-summary-list dd {
+    margin: 0.25rem 0 0;
+    font-size: 0.89rem;
+    font-weight: 600;
+    color: #212b3f;
+  }
+
+  .sp-tag-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.34rem;
+  }
+
+  .sp-tag {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #dae1ee;
+    border-radius: 999px;
+    padding: 0.12rem 0.48rem;
+    font-size: 0.72rem;
+    color: #3e4b64;
+    background: #f6f8fc;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  @media (min-width: 1200px) {
+    .sp-content-grid {
+      grid-template-columns: minmax(0, 2.65fr) minmax(255px, 1fr);
+      align-items: start;
+    }
+
+    .sp-sidebar-card {
+      position: sticky;
+      top: 1rem;
+    }
+  }
+
+  @media (max-width: 991.98px) {
+    .sp-header {
+      padding: 1rem;
+    }
+
+    .sp-header-identity {
+      align-items: flex-start;
+    }
+
+    .sp-contact-list {
+      grid-template-columns: 1fr;
+    }
+
+    .sp-actions {
+      width: 100%;
+      grid-template-columns: 1fr;
+    }
+
+    .sp-table {
+      min-width: 760px;
+    }
+  }
+
+  @media (max-width: 575.98px) {
+    .sp-avatar-wrap {
+      width: 70px;
+      height: 70px;
+    }
+
+    .sp-name {
+      font-size: 1.35rem;
+    }
+
+    .sp-shell {
+      border-radius: 14px;
+      padding: 0.85rem;
+    }
+
+    .sp-metric-value {
+      font-size: 1.08rem;
+    }
+  }
+</style>
+{% endblock %}

@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}TMIS CRM{% endblock %}</title>
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous"
+  >
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+  >
+  <style>
+    :root {
+      --crm-bg: #f6f7fb;
+      --crm-border: #eceef3;
+      --crm-text: #141824;
+      --crm-muted: #6d7485;
+      --crm-hover: #f4f0f6;
+      --crm-active: #efe7f2;
+      --crm-primary: #462850;
+      --crm-primary-strong: #371f40;
+      --crm-primary-soft: #f8f3fa;
+      --icon-rail-width: 70px;
+      --main-sidebar-width: 240px;
+    }
+
+    body {
+      background: var(--crm-bg);
+      color: var(--crm-text);
+      overflow-x: hidden;
+    }
+
+    .mobile-topbar {
+      height: 64px;
+      border-bottom: 1px solid var(--crm-border);
+      background: #fff;
+    }
+
+    .mobile-brand-logo {
+      width: 116px;
+      height: auto;
+      display: block;
+    }
+
+    .crm-layout {
+      min-height: 100vh;
+    }
+
+    .icon-rail {
+      width: var(--icon-rail-width);
+      border-right: 1px solid var(--crm-border);
+      background: #fff;
+      z-index: 1025;
+    }
+
+    .icon-rail .brand-mark {
+      width: 52px;
+      height: auto;
+      display: block;
+    }
+
+    .icon-link {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      color: var(--crm-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+
+    .icon-link:hover {
+      color: var(--crm-text);
+      background: var(--crm-hover);
+    }
+
+    .icon-link.active {
+      background: var(--crm-active);
+      color: var(--crm-primary);
+    }
+
+    .main-sidebar {
+      width: var(--main-sidebar-width);
+      border-right: 1px solid var(--crm-border);
+      background: #fff;
+      z-index: 1024;
+    }
+
+    .sidebar-header {
+      min-height: 72px;
+      border-bottom: 1px solid var(--crm-border);
+    }
+
+    .sidebar-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      letter-spacing: 0.01em;
+    }
+
+    .sidebar-subtitle {
+      color: var(--crm-muted);
+      font-size: 0.78rem;
+    }
+
+    .sidebar-logo {
+      width: 122px;
+      height: auto;
+      display: block;
+    }
+
+    .main-nav {
+      overflow-y: auto;
+      height: calc(100vh - 72px - 124px);
+    }
+
+    .crm-nav-section {
+      padding: 0.85rem 0.75rem 0;
+    }
+
+    .crm-nav-title {
+      color: var(--crm-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.68rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .crm-nav-link {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      color: var(--crm-text);
+      border-radius: 10px;
+      padding: 0.48rem 0.65rem;
+      text-decoration: none;
+      font-size: 0.9rem;
+      margin-bottom: 0.2rem;
+      transition: all 0.15s ease;
+    }
+
+    .crm-nav-link i {
+      color: var(--crm-muted);
+      font-size: 1rem;
+      width: 1rem;
+      text-align: center;
+    }
+
+    .crm-nav-link:hover {
+      background: var(--crm-hover);
+    }
+
+    .crm-nav-link.active {
+      background: var(--crm-active);
+      color: var(--crm-primary);
+      font-weight: 600;
+    }
+
+    .crm-nav-link.active i {
+      color: var(--crm-primary);
+    }
+
+    a {
+      color: var(--crm-primary);
+    }
+
+    a:hover {
+      color: var(--crm-primary-strong);
+    }
+
+    .link-primary {
+      color: #0d6efd;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      font-weight: 500;
+    }
+
+    .link-primary:hover,
+    .link-primary:focus {
+      color: #0a58ca;
+      text-decoration-thickness: 2px;
+    }
+
+    .link-primary:focus-visible {
+      outline: 2px solid rgba(13, 110, 253, 0.35);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+
+    .sidebar-account {
+      border-top: 1px solid var(--crm-border);
+      background: #fff;
+    }
+
+    .content-shell {
+      min-width: 0;
+      flex: 1 1 auto;
+      padding: 1.25rem;
+    }
+
+    .content-card {
+      background: #fff;
+      border: 1px solid var(--crm-border);
+      border-radius: 16px;
+      padding: 1rem;
+    }
+
+    .mobile-offcanvas .offcanvas-body {
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .mobile-nav-scroll {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      padding-bottom: 0.75rem;
+    }
+
+    .btn-primary {
+      background-color: var(--crm-primary);
+      border-color: var(--crm-primary);
+    }
+
+    .btn-primary:hover,
+    .btn-primary:focus {
+      background-color: var(--crm-primary-strong);
+      border-color: var(--crm-primary-strong);
+    }
+
+    .btn-outline-primary {
+      color: var(--crm-primary);
+      border-color: #c9b7cf;
+    }
+
+    .btn-outline-primary:hover,
+    .btn-outline-primary:focus {
+      color: #fff;
+      background-color: var(--crm-primary);
+      border-color: var(--crm-primary);
+    }
+
+    .btn-logout {
+      color: #5c6678;
+      border-color: #d3dae6;
+      background: #fff;
+    }
+
+    .btn-logout:hover,
+    .btn-logout:focus {
+      color: #2f3a4f;
+      border-color: #b8c4d8;
+      background: #f5f8fc;
+    }
+
+    .crud-list-shell .page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .crud-list-shell .page-title {
+      margin: 0;
+      font-size: clamp(1.35rem, 1.1rem + 0.9vw, 1.75rem);
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: var(--crm-text);
+    }
+
+    .crud-list-shell .page-subtitle {
+      margin-top: 0.3rem;
+      color: var(--crm-muted);
+      font-size: 0.92rem;
+    }
+
+    .crud-list-shell .page-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .crud-list-shell .page-actions .btn {
+      border-radius: 10px;
+      font-weight: 600;
+      padding-inline: 0.95rem;
+    }
+
+    .crud-list-shell .table-card {
+      border: 1px solid var(--crm-border);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 10px 24px rgba(17, 24, 39, 0.06);
+    }
+
+    .crud-list-shell .search-card {
+      border: 1px solid var(--crm-border);
+      border-radius: 14px;
+      box-shadow: 0 8px 24px rgba(37, 20, 43, 0.06);
+    }
+
+    .crud-list-shell .search-label {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: var(--crm-muted);
+    }
+
+    .crud-list-shell .search-input {
+      border-radius: 10px;
+      border-color: #d8dce6;
+      min-height: 42px;
+    }
+
+    .crud-list-shell .search-input:focus {
+      border-color: #bda4c6;
+      box-shadow: 0 0 0 0.2rem rgba(70, 40, 80, 0.13);
+    }
+
+    .crud-list-shell .search-btn {
+      min-height: 42px;
+      border-radius: 10px;
+      font-weight: 600;
+      padding-inline: 1rem;
+    }
+
+    .crud-list-shell .clear-link {
+      min-height: 42px;
+      display: inline-flex;
+      align-items: center;
+      color: var(--crm-primary);
+      text-decoration: none;
+      font-weight: 600;
+      padding-inline: 0.2rem;
+    }
+
+    .crud-list-shell .clear-link:hover {
+      color: var(--crm-primary-strong);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    .crud-list-shell .table {
+      margin-bottom: 0;
+    }
+
+    .crud-list-shell .table thead th {
+      background: #f7f2f9;
+      border-bottom: 1px solid #e7ddec;
+      color: var(--crm-primary);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+      padding-top: 0.8rem;
+      padding-bottom: 0.8rem;
+      white-space: nowrap;
+    }
+
+    .crud-list-shell .table tbody tr:nth-child(even) {
+      background: #fcfbfd;
+    }
+
+    .crud-list-shell .table tbody td {
+      border-color: #eef0f5;
+      padding-top: 0.85rem;
+      padding-bottom: 0.85rem;
+      vertical-align: middle;
+    }
+
+    .crud-list-shell .table tbody tr:hover {
+      background: #f8f3fa;
+    }
+
+    .crud-list-shell .contact-id {
+      font-weight: 700;
+      color: #5f3d6b;
+    }
+
+    .crud-list-shell .actions {
+      display: flex;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+
+    .crud-list-shell .actions .btn {
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.28rem 0.72rem;
+      line-height: 1.3;
+    }
+
+    .crud-list-shell .empty-state {
+      text-align: center;
+      color: var(--crm-muted);
+      padding: 2rem 0.75rem;
+    }
+
+    .crud-list-shell .pagination {
+      gap: 0.4rem;
+    }
+
+    .crud-list-shell .pagination .page-link {
+      border-radius: 10px;
+      border-color: #ddd3e2;
+      color: var(--crm-primary);
+      min-width: 44px;
+      text-align: center;
+    }
+
+    .crud-list-shell .pagination .page-link:hover,
+    .crud-list-shell .pagination .page-item.active .page-link {
+      background: var(--crm-primary);
+      border-color: var(--crm-primary);
+      color: #fff;
+    }
+
+    .crud-list-shell .pagination .page-item.disabled .page-link {
+      color: #9ba3b3;
+      border-color: #e4e7ee;
+      background: #fff;
+    }
+
+    @media (min-width: 992px) {
+      .content-shell {
+        padding: 1.5rem;
+      }
+
+      .content-card {
+        padding: 1.25rem;
+      }
+    }
+
+    @media (max-width: 991.98px) {
+      .crud-list-shell .page-head {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .crud-list-shell .page-actions {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 767.98px) {
+      .crud-list-shell .search-row {
+        grid-template-columns: 1fr !important;
+      }
+
+      .crud-list-shell .search-btn,
+      .crud-list-shell .clear-link {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  <header class="mobile-topbar d-lg-none d-flex align-items-center justify-content-between px-3 sticky-top">
+    <a class="text-decoration-none" href="{% url 'core:home' %}">
+      <img src="{% static 'core/images/tmis-logo.svg' %}" alt="TMIS CRM" class="mobile-brand-logo">
+    </a>
+    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="offcanvas" data-bs-target="#crmMobileSidebar" aria-controls="crmMobileSidebar">
+      <i class="bi bi-list"></i>
+    </button>
+  </header>
+
+  <div class="offcanvas offcanvas-start mobile-offcanvas" tabindex="-1" id="crmMobileSidebar" aria-labelledby="crmMobileSidebarLabel">
+    <div class="offcanvas-header border-bottom">
+      <h5 class="offcanvas-title" id="crmMobileSidebarLabel">TMIS Navigation</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body">
+      <div class="mobile-nav-scroll">
+        {% include "core/crud/partials/sidebar_nav.html" %}
+      </div>
+      <div class="sidebar-account p-3">
+        {% if request.user.is_authenticated %}
+          <p class="mb-2 fw-semibold">{{ request.user.get_username }}</p>
+          <form method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-logout btn-sm w-100">Logout</button>
+          </form>
+        {% else %}
+          <a class="btn btn-outline-primary btn-sm w-100" href="{% url 'core:login' %}?next={{ request.path|urlencode }}">Login</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="crm-layout d-flex">
+    <aside class="icon-rail d-none d-lg-flex flex-column align-items-center py-3 position-sticky top-0 vh-100">
+      <a class="mb-4 d-inline-flex justify-content-center" href="{% url 'core:home' %}" title="TMIS">
+        <img src="{% static 'core/images/tmis-logo.svg' %}" alt="TMIS CRM" class="brand-mark">
+      </a>
+
+      <nav class="d-flex flex-column align-items-center gap-2">
+        <a class="icon-link{% if request.path == '/' %} active{% endif %}" href="{% url 'core:home' %}" title="Home">
+          <i class="bi bi-grid"></i>
+        </a>
+        <a class="icon-link{% if '/pipeline/' in request.path or '/prospects/' in request.path or '/students/' in request.path or '/inquiries/' in request.path or '/communications/' in request.path or '/contacts/' in request.path %} active{% endif %}" href="{% url 'core:prospect-list' %}" title="CRM">
+          <i class="bi bi-people"></i>
+        </a>
+        <a class="icon-link{% if '/teachers/' in request.path or '/teacherspecializations/' in request.path or '/locations/' in request.path or '/courses/' in request.path or '/coursesessions/' in request.path or '/enrollments/' in request.path or '/interviewforms/' in request.path %} active{% endif %}" href="{% url 'core:teacher-list' %}" title="Training">
+          <i class="bi bi-mortarboard"></i>
+        </a>
+        <a class="icon-link{% if '/invoices/' in request.path or '/payments/' in request.path or '/disbursements/' in request.path or '/reporting/' in request.path %} active{% endif %}" href="{% url 'core:invoice-list' %}" title="Finance">
+          <i class="bi bi-wallet2"></i>
+        </a>
+      </nav>
+
+      <div class="mt-auto d-flex flex-column align-items-center gap-2">
+        {% if request.user.is_staff %}
+          <a class="icon-link" href="/admin/" title="Admin">
+            <i class="bi bi-shield-lock"></i>
+          </a>
+        {% endif %}
+      </div>
+    </aside>
+
+    <aside class="main-sidebar d-none d-lg-flex flex-column position-sticky top-0 vh-100">
+      <div class="sidebar-header px-3 d-flex align-items-center">
+        <div>
+          <img src="{% static 'core/images/tmis-logo.svg' %}" alt="TMIS CRM" class="sidebar-logo mb-1">
+        </div>
+      </div>
+
+      <nav class="main-nav">
+        {% include "core/crud/partials/sidebar_nav.html" %}
+      </nav>
+
+      <div class="sidebar-account p-3 mt-auto">
+        {% if request.user.is_authenticated %}
+          <div class="small text-muted mb-1">Signed in as</div>
+          <div class="fw-semibold mb-2 text-truncate">{{ request.user.get_username }}</div>
+          <form method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-logout btn-sm w-100">Logout</button>
+          </form>
+        {% else %}
+          <a class="btn btn-outline-primary btn-sm w-100" href="{% url 'core:login' %}?next={{ request.path|urlencode }}">Login</a>
+        {% endif %}
+      </div>
+    </aside>
+
+    <main class="content-shell">
+      <div class="content-card">
+        {% if list_url_name %}
+          <nav aria-label="breadcrumb" class="mb-3">
+            <ol class="breadcrumb mb-0">
+              <li class="breadcrumb-item"><a href="{% url 'core:home' %}">Home</a></li>
+              <li class="breadcrumb-item"><a href="{% url list_url_name %}">{{ model_name_plural }}</a></li>
+              {% block breadcrumb_current %}{% endblock %}
+            </ol>
+          </nav>
+        {% endif %}
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+  <script
+    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+    integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+    crossorigin="anonymous"
+  ></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

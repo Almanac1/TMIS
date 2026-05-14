@@ -1,0 +1,10 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+  {% if change and not is_popup and convert_to_student_url %}
+    <li>
+      <a href="{{ convert_to_student_url }}" class="historylink">Convert to Student</a>
+    </li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

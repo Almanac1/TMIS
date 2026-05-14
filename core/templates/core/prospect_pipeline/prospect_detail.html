@@ -1,0 +1,98 @@
+{% extends "core/crud/base.html" %}
+
+{% block title %}Prospect: {{ prospect.first_name }} {{ prospect.last_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">{{ prospect.first_name }} {{ prospect.last_name }}</h1>
+  <div class="d-flex gap-2">
+    <a href="{% url 'core:prospect-pipeline-list' %}" class="btn btn-outline-secondary">Back to Pipeline</a>
+    {% if is_converted %}
+      <span class="btn btn-success disabled">Already Converted</span>
+    {% else %}
+      <form method="post" action="{% url 'core:prospect-pipeline-convert' prospect.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary">Convert to Student</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }}">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card mb-4">
+      <div class="card-header">Prospect Profile</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-4">Email</dt><dd class="col-sm-8">{{ prospect.email }}</dd>
+          <dt class="col-sm-4">Phone</dt><dd class="col-sm-8">{{ prospect.phone|default:"-" }}</dd>
+          <dt class="col-sm-4">Status</dt><dd class="col-sm-8">{{ prospect.get_status_display }}</dd>
+          <dt class="col-sm-4">Interest</dt><dd class="col-sm-8">{{ prospect.get_interest_level_display|default:"-" }}</dd>
+          <dt class="col-sm-4">Source</dt><dd class="col-sm-8">{{ prospect.source|default:"-" }}</dd>
+          <dt class="col-sm-4">Preferred Contact</dt><dd class="col-sm-8">{{ prospect.get_preferred_contact_method_display|default:"-" }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Inquiry History</div>
+      <div class="list-group list-group-flush">
+        {% for inquiry in inquiries %}
+          <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <div class="fw-semibold">{{ inquiry.subject|default:"Inquiry" }}</div>
+                <div class="small text-muted">{{ inquiry.inquiry_date }} via {{ inquiry.get_channel_display }} | {{ inquiry.get_status_display }}</div>
+                <div class="mt-2">{{ inquiry.message|linebreaksbr }}</div>
+              </div>
+            </div>
+          </div>
+        {% empty %}
+          <div class="list-group-item text-muted">No inquiries yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    {% include "core/prospect_pipeline/partials/communication_log.html" %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-6Vx8tR8l2Q8M4AK6AOH4YYnV3SeNBY0d5hDOGOZa2mYIZHuZOKhHvJ3C0cFLbFh7" crossorigin="anonymous"></script>
+<script>
+  (function () {
+    var channel = document.getElementById("id_channel");
+    var subject = document.getElementById("id_subject");
+    var body = document.getElementById("id_body");
+    if (channel) {
+      channel.classList.add("form-select");
+    }
+    if (subject) {
+      subject.classList.add("form-control");
+    }
+    if (body) {
+      body.classList.add("form-control");
+    }
+  })();
+
+  document.body.addEventListener("htmx:afterSwap", function (event) {
+    if (event.target && event.target.id === "communication-log") {
+      var channel = document.getElementById("id_channel");
+      var subject = document.getElementById("id_subject");
+      var body = document.getElementById("id_body");
+      if (channel) channel.classList.add("form-select");
+      if (subject) subject.classList.add("form-control");
+      if (body) body.classList.add("form-control");
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,78 @@
+<div class="crm-nav-section">
+  <p class="crm-nav-title">Overview</p>
+  <a class="crm-nav-link{% if request.path == '/' %} active{% endif %}" href="{% url 'core:home' %}">
+    <i class="bi bi-grid"></i><span>Home</span>
+  </a>
+  <a class="crm-nav-link{% if '/pipeline/prospects/dashboard/' in request.path %} active{% endif %}" href="{% url 'core:prospect-dashboard' %}">
+    <i class="bi bi-speedometer2"></i><span>Pipeline Dashboard</span>
+  </a>
+  <a class="crm-nav-link{% if '/pipeline/prospects/' in request.path and '/pipeline/prospects/dashboard/' not in request.path %} active{% endif %}" href="{% url 'core:prospect-pipeline-list' %}">
+    <i class="bi bi-diagram-3"></i><span>Prospect Pipeline</span>
+  </a>
+</div>
+
+<div class="crm-nav-section">
+  <p class="crm-nav-title">CRM</p>
+  <a class="crm-nav-link{% if '/contacts/' in request.path %} active{% endif %}" href="{% url 'core:contact-list' %}">
+    <i class="bi bi-person-lines-fill"></i><span>Contacts</span>
+  </a>
+  <a class="crm-nav-link{% if '/prospects/' in request.path and '/pipeline/prospects/' not in request.path %} active{% endif %}" href="{% url 'core:prospect-list' %}">
+    <i class="bi bi-person-plus"></i><span>Prospects</span>
+  </a>
+  <a class="crm-nav-link{% if '/students/' in request.path %} active{% endif %}" href="{% url 'core:student-list' %}">
+    <i class="bi bi-people"></i><span>Students</span>
+  </a>
+  <a class="crm-nav-link{% if '/meditators/' in request.path %} active{% endif %}" href="{% url 'core:meditator-list' %}">
+    <i class="bi bi-stars"></i><span>Meditators</span>
+  </a>
+  <a class="crm-nav-link{% if '/inquiries/' in request.path %} active{% endif %}" href="{% url 'core:inquiry-list' %}">
+    <i class="bi bi-chat-left-text"></i><span>Inquiries</span>
+  </a>
+  <a class="crm-nav-link{% if '/communications/' in request.path %} active{% endif %}" href="{% url 'core:communication-list' %}">
+    <i class="bi bi-send"></i><span>Communications</span>
+  </a>
+</div>
+
+<div class="crm-nav-section">
+  <p class="crm-nav-title">Training</p>
+  <a class="crm-nav-link{% if '/teachers/' in request.path and '/teacherspecializations/' not in request.path %} active{% endif %}" href="{% url 'core:teacher-list' %}">
+    <i class="bi bi-person-video3"></i><span>Governors</span>
+  </a>
+  <a class="crm-nav-link{% if '/teacherspecializations/' in request.path %} active{% endif %}" href="{% url 'core:teacherspecialization-list' %}">
+    <i class="bi bi-award"></i><span>Governor Specializations</span>
+  </a>
+  <a class="crm-nav-link{% if '/locations/' in request.path %} active{% endif %}" href="{% url 'core:location-list' %}">
+    <i class="bi bi-geo-alt"></i><span>Locations</span>
+  </a>
+  <a class="crm-nav-link{% if '/courses/' in request.path and '/coursesessions/' not in request.path %} active{% endif %}" href="{% url 'core:course-list' %}">
+    <i class="bi bi-journal-text"></i><span>Courses</span>
+  </a>
+  <a class="crm-nav-link{% if '/coursesessions/' in request.path %} active{% endif %}" href="{% url 'core:coursesession-list' %}">
+    <i class="bi bi-calendar3"></i><span>Course Sessions</span>
+  </a>
+  <a class="crm-nav-link{% if '/enrollments/' in request.path %} active{% endif %}" href="{% url 'core:enrollment-list' %}">
+    <i class="bi bi-check2-square"></i><span>Enrollments</span>
+  </a>
+  <a class="crm-nav-link{% if '/interviewforms/' in request.path %} active{% endif %}" href="{% url 'core:interviewform-list' %}">
+    <i class="bi bi-clipboard2-pulse"></i><span>Interview Forms</span>
+  </a>
+</div>
+
+<div class="crm-nav-section">
+  <p class="crm-nav-title">Finance & Reporting</p>
+  <a class="crm-nav-link{% if '/invoices/' in request.path %} active{% endif %}" href="{% url 'core:invoice-list' %}">
+    <i class="bi bi-receipt"></i><span>Invoices</span>
+  </a>
+  <a class="crm-nav-link{% if '/payments/' in request.path %} active{% endif %}" href="{% url 'core:payment-list' %}">
+    <i class="bi bi-credit-card"></i><span>Payments</span>
+  </a>
+  <a class="crm-nav-link{% if '/disbursements/' in request.path and '/reporting/disbursements/' not in request.path %} active{% endif %}" href="{% url 'core:disbursement-list' %}">
+    <i class="bi bi-cash-stack"></i><span>Disbursements</span>
+  </a>
+  <a class="crm-nav-link{% if '/reporting/teacher-earnings/' in request.path %} active{% endif %}" href="{% url 'core:teacher-earnings-dashboard' %}">
+    <i class="bi bi-bar-chart-line"></i><span>Governor Earnings</span>
+  </a>
+  <a class="crm-nav-link{% if '/reporting/disbursements/' in request.path %} active{% endif %}" href="{% url 'core:disbursement-reporting' %}">
+    <i class="bi bi-graph-up-arrow"></i><span>Disbursement Report</span>
+  </a>
+</div>

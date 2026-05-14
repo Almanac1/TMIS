@@ -1,0 +1,113 @@
+{% extends "core/crud/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Disbursement Reporting{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 mb-1">Disbursement Reporting</h1>
+    <p class="text-muted mb-0">Product reporting view (independent of admin)</p>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <form method="get" class="row g-3">
+      <div class="col-md-2">
+        {{ form.report_by|as_crispy_field }}
+      </div>
+      <div class="col-md-2">
+        {{ form.start_date|as_crispy_field }}
+      </div>
+      <div class="col-md-2">
+        {{ form.end_date|as_crispy_field }}
+      </div>
+      <div class="col-md-3">
+        {{ form.teacher|as_crispy_field }}
+      </div>
+      <div class="col-md-3">
+        {{ form.location|as_crispy_field }}
+      </div>
+      <div class="col-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Run Report</button>
+        <a href="{% url 'core:disbursement-reporting' %}" class="btn btn-outline-secondary">Reset</a>
+      </div>
+      {% if form.non_field_errors %}
+        <div class="col-12 text-danger small">{{ form.non_field_errors|striptags }}</div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+{% if report %}
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <div class="card border-primary">
+        <div class="card-body">
+          <div class="text-muted small">Total Disbursed Amount</div>
+          <div class="h4 mb-0">{{ report.total_amount }}</div>
+          <div class="small text-muted mt-2">
+            Mode: {{ report.report_by|title }} | {{ report.start_date }} to {{ report.end_date }}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small">Governor Filter</div>
+          <div class="fw-semibold">{{ report.teacher|default:"All governors" }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small">Location Filter</div>
+          <div class="fw-semibold">{{ report.location|default:"All locations" }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>Breakdown</span>
+      <span class="badge text-bg-secondary">{{ report.row_count }} rows</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Governor</th>
+            <th>Location</th>
+            <th>Session</th>
+            <th>Status</th>
+            <th>Entries</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in report.breakdown_rows %}
+            <tr>
+              <td>{{ row.disbursement_date }}</td>
+              <td>{{ row.teacher__first_name }} {{ row.teacher__last_name }}</td>
+              <td>{{ row.location__name|default:"-" }}</td>
+              <td>{{ row.enrollment__session__session_name|default:"Unnamed Session" }}</td>
+              <td>{{ row.status }}</td>
+              <td>{{ row.disbursement_count }}</td>
+              <td>{{ row.row_total }}</td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="7" class="text-muted">No disbursement data matches these filters.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

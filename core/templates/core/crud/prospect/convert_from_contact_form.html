@@ -1,0 +1,39 @@
+{% extends "core/crud/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Convert Contact to Prospect{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">Convert Contact</li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Convert Contact to Prospect</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{% url 'core:contact-list' %}">Back to Contacts</a>
+    <a class="btn btn-outline-primary" href="{% url 'core:contact-detail' contact.pk %}">View Contact</a>
+  </div>
+</div>
+
+<div class="alert alert-info" role="alert">
+  Creating Prospect from: <strong>{{ contact }}</strong>
+</div>
+
+<div class="alert alert-light border" role="alert">
+  <strong>Pre-filled from Contact:</strong> name, email, and phone.
+  Complete the remaining Prospect fields, then save.
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {{ form|crispy }}
+      <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-primary" type="submit">Save Prospect</button>
+        <a class="btn btn-outline-secondary" href="{% url 'core:contact-list' %}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

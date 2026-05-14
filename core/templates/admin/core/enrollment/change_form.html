@@ -1,0 +1,15 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+  {% if change and not is_popup and generate_invoice_url %}
+    <li>
+      <a href="{{ generate_invoice_url }}" class="historylink">Generate Invoice</a>
+    </li>
+  {% endif %}
+  {% if change and not is_popup and generate_disbursement_url %}
+    <li>
+      <a href="{{ generate_disbursement_url }}" class="historylink">Generate Disbursement</a>
+    </li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

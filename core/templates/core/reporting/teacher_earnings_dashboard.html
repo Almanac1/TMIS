@@ -1,0 +1,91 @@
+{% extends "core/crud/base.html" %}
+
+{% block title %}Governor Earnings Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 mb-1">Governor Earnings Dashboard</h1>
+    <p class="text-muted mb-0">Generated on {{ generated_on }}</p>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Governor</th>
+          <th>Today</th>
+          <th>This Month</th>
+          <th>This Year</th>
+          <th>Students Taught</th>
+          <th>Breakdown</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in teachers %}
+          <tr>
+            <td class="fw-semibold">{{ row.teacher }}</td>
+            <td>{{ row.today_total }}</td>
+            <td>{{ row.month_total }}</td>
+            <td>{{ row.year_total }}</td>
+            <td>{{ row.student_count }}</td>
+            <td>
+              {% if row.session_location_breakdown %}
+                <button
+                  class="btn btn-sm btn-outline-primary"
+                  type="button"
+                  data-bs-toggle="collapse"
+                  data-bs-target="#breakdown-{{ row.teacher.pk }}"
+                  aria-expanded="false"
+                  aria-controls="breakdown-{{ row.teacher.pk }}"
+                >
+                  View Session/Location
+                </button>
+              {% else %}
+                <span class="text-muted">No entries</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr class="collapse" id="breakdown-{{ row.teacher.pk }}">
+            <td colspan="6" class="bg-light">
+              <div class="p-2">
+                <div class="fw-semibold mb-2">Session and Location Breakdown</div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-striped mb-0">
+                    <thead>
+                      <tr>
+                        <th>Course</th>
+                        <th>Session</th>
+                        <th>Location</th>
+                        <th>Students</th>
+                        <th>Earnings</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for item in row.session_location_breakdown %}
+                        <tr>
+                          <td>{{ item.course_name }}</td>
+                          <td>{{ item.session_name }}</td>
+                          <td>{{ item.location_name }}</td>
+                          <td>{{ item.students_taught }}</td>
+                          <td>{{ item.earnings }}</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="6" class="text-muted">No governors found.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

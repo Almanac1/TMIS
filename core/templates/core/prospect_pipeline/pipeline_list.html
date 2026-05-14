@@ -1,0 +1,52 @@
+{% extends "core/crud/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Prospect Pipeline{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Prospect Pipeline</h1>
+  <div class="d-flex gap-2">
+    <a href="{% url 'core:prospect-dashboard' %}" class="btn btn-outline-secondary">Dashboard</a>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <form id="pipeline-filter-form"
+          class="row g-3"
+          method="get"
+          hx-get="{% url 'core:prospect-pipeline-list' %}"
+          hx-target="#pipeline-table"
+          hx-push-url="true">
+      <div class="col-md-4">
+        {{ filter_form.q|as_crispy_field }}
+      </div>
+      <div class="col-md-2">
+        {{ filter_form.status|as_crispy_field }}
+      </div>
+      <div class="col-md-2">
+        {{ filter_form.interest_level|as_crispy_field }}
+      </div>
+      <div class="col-md-2">
+        {{ filter_form.preferred_contact_method|as_crispy_field }}
+      </div>
+      <div class="col-md-2">
+        {{ filter_form.converted|as_crispy_field }}
+      </div>
+      <div class="col-12 d-flex gap-2">
+        <button class="btn btn-primary" type="submit">Apply Filters</button>
+        <a class="btn btn-outline-secondary" href="{% url 'core:prospect-pipeline-list' %}">Reset</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="pipeline-table">
+  {% include "core/prospect_pipeline/partials/pipeline_table.html" %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-6Vx8tR8l2Q8M4AK6AOH4YYnV3SeNBY0d5hDOGOZa2mYIZHuZOKhHvJ3C0cFLbFh7" crossorigin="anonymous"></script>
+{% endblock %}

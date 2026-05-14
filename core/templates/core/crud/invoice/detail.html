@@ -1,0 +1,106 @@
+{% extends "core/crud/base.html" %}
+
+{% block title %}Invoice {{ object.invoice_number }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">Invoice {{ object.invoice_number }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 mb-0">Invoice {{ object.invoice_number }}</h1>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
+    <a class="btn btn-secondary" href="{% url update_url_name object.pk %}">Edit</a>
+    {% if can_add_payment %}
+      <a class="btn btn-primary" href="{% url 'core:add_invoice_payment' object.pk %}">Record Additional Payment</a>
+    {% else %}
+      <button class="btn btn-outline-success" type="button" disabled aria-disabled="true">Invoice already fully paid</button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Student</div>
+        <div class="fw-semibold">{{ invoice_student.prospect|default:invoice_student }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Invoice Total</div>
+        <div class="fw-semibold">${{ object.total_amount|floatformat:2 }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Amount Paid</div>
+        <div class="fw-semibold">${{ total_paid|floatformat:2 }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Outstanding Balance</div>
+        <div class="fw-semibold {% if outstanding_balance > 0 %}text-warning{% else %}text-success{% endif %}">
+          ${{ outstanding_balance|floatformat:2 }}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header bg-light fw-semibold">Invoice Details</div>
+  <div class="table-responsive">
+    <table class="table table-striped mb-0">
+      <tbody>
+        {% for label, value in object_fields %}
+          <tr>
+            <th style="width: 32%;">{{ label }}</th>
+            <td>{{ value|default:"-" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-light fw-semibold">Payments</div>
+  <div class="table-responsive">
+    <table class="table table-striped mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Payment Date</th>
+          <th>Amount</th>
+          <th>Method</th>
+          <th>Reference</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for payment in payments %}
+          <tr>
+            <td>{{ payment.payment_date|date:"M d, Y g:i A" }}</td>
+            <td>${{ payment.amount_paid|floatformat:2 }}</td>
+            <td>{{ payment.get_payment_method_display }}</td>
+            <td>{{ payment.reference_number|default:"-" }}</td>
+            <td>{{ payment.get_confirmation_status_display }}</td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="5" class="text-muted">No payments recorded for this invoice.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

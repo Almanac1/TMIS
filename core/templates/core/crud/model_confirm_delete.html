@@ -1,0 +1,23 @@
+{% extends "core/crud/base.html" %}
+
+{% block title %}Delete {{ model_name }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">Delete #{{ object.pk }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="card border-danger shadow-sm">
+  <div class="card-body">
+    <h1 class="h4 text-danger mb-3">Delete {{ model_name }}</h1>
+    <p class="mb-4">Are you sure you want to delete: <strong>{{ object }}</strong>?</p>
+
+    <form method="post">
+      {% csrf_token %}
+      <div class="d-flex gap-2">
+        <button class="btn btn-danger" type="submit">Confirm delete</button>
+        <a class="btn btn-outline-secondary" href="{% url detail_url_name object.pk %}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

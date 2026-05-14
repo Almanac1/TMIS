@@ -1,0 +1,648 @@
+{% extends "core/crud/base.html" %}
+{% block title %}TMIS CRM Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+  .kpi-card {
+    border: 1px solid var(--crm-border);
+    border-radius: 14px;
+  }
+  .kpi-label {
+    color: var(--crm-muted);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.3rem;
+  }
+  .kpi-value {
+    font-size: 1.5rem;
+    line-height: 1.1;
+    font-weight: 700;
+    color: var(--crm-text);
+  }
+  .chart-card {
+    border: 1px solid var(--crm-border);
+    border-radius: 14px;
+  }
+  .chart-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0;
+  }
+  .chart-sub {
+    color: var(--crm-muted);
+    font-size: 0.82rem;
+  }
+  .chart-wrap {
+    position: relative;
+    width: 100%;
+    height: 300px;
+  }
+  .chart-wrap.sm {
+    height: 250px;
+  }
+  .chart-wrap.lg {
+    height: 340px;
+  }
+  .chart-wrap canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+  }
+  @media (max-width: 991.98px) {
+    .chart-wrap,
+    .chart-wrap.sm,
+    .chart-wrap.lg {
+      height: 260px;
+    }
+  }
+  .preview-card {
+    border: 1px solid var(--crm-border);
+    border-radius: 14px;
+  }
+  .preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .preview-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0;
+  }
+  .preview-table {
+    font-size: 0.92rem;
+  }
+  .preview-empty {
+    color: var(--crm-muted);
+    padding: 1rem 0.25rem 0.25rem;
+    margin: 0;
+  }
+  .reminder-list {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .reminder-item {
+    border: 1px solid var(--crm-border);
+    border-radius: 10px;
+    padding: 0.65rem 0.75rem;
+    background: #fff;
+  }
+  .reminder-meta {
+    color: var(--crm-muted);
+    font-size: 0.84rem;
+  }
+  .overdue-badge {
+    font-size: 0.76rem;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 0.2rem 0.55rem;
+    background: #fff3cd;
+    color: #7a5a00;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+  <div>
+    <h1 class="h3 mb-1">Your CRM Home</h1>
+    <p class="text-muted mb-0">User-scoped pipeline, operations, and finance snapshot.</p>
+  </div>
+  <a href="{% url 'core:prospect-pipeline-list' %}" class="btn btn-primary btn-sm">Open Pipeline</a>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="card kpi-card h-100">
+      <div class="card-body">
+        <div class="kpi-label">Total Prospects</div>
+        <div class="kpi-value">{{ dashboard.kpis.total_prospects }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="card kpi-card h-100">
+      <div class="card-body">
+        <div class="kpi-label">Active Students</div>
+        <div class="kpi-value">{{ dashboard.kpis.active_students }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="card kpi-card h-100">
+      <div class="card-body">
+        <div class="kpi-label">Open Inquiries</div>
+        <div class="kpi-value">{{ dashboard.kpis.open_inquiries }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="card kpi-card h-100">
+      <div class="card-body">
+        <div class="kpi-label">Outstanding Amount</div>
+        <div class="kpi-value">${{ dashboard.kpis.outstanding_amount|floatformat:2 }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card chart-card mb-4">
+  <div class="card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+      <div>
+        <h2 class="chart-title">Student Check-in Reminders</h2>
+        <div class="chart-sub">{{ dashboard.check_in_reminders.anchor_description }}</div>
+      </div>
+    </div>
+    <div class="row g-3">
+      <div class="col-12 col-lg-6">
+        <h3 class="h6 mb-2">Due Today (Day 3 / Day 10 / Day 20)</h3>
+        {% if dashboard.check_in_reminders.due_today %}
+          <div class="reminder-list">
+            {% for reminder in dashboard.check_in_reminders.due_today %}
+              <div class="reminder-item">
+                <div class="fw-semibold">
+                  <a href="{% url 'core:student-detail' reminder.student.pk %}" class="link-body-emphasis text-decoration-none">
+                    {{ reminder.student }}
+                  </a>
+                </div>
+                <div class="reminder-meta">{{ reminder.day_label }} · Due {{ reminder.due_date }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="preview-empty">No check-ins due today.</p>
+        {% endif %}
+      </div>
+      <div class="col-12 col-lg-6">
+        <h3 class="h6 mb-2">Missed Check-ins</h3>
+        {% if dashboard.check_in_reminders.overdue %}
+          <div class="reminder-list">
+            {% for reminder in dashboard.check_in_reminders.overdue %}
+              <div class="reminder-item d-flex justify-content-between align-items-start gap-2">
+                <div>
+                  <div class="fw-semibold">
+                    <a href="{% url 'core:student-detail' reminder.student.pk %}" class="link-body-emphasis text-decoration-none">
+                      {{ reminder.student }}
+                    </a>
+                  </div>
+                  <div class="reminder-meta">{{ reminder.day_label }} · Was due {{ reminder.due_date }}</div>
+                </div>
+                <span class="overdue-badge">{{ reminder.days_overdue }} day{{ reminder.days_overdue|pluralize }} overdue</span>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="preview-empty">No missed check-ins.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-xxl-4">
+    <section class="card preview-card h-100" aria-labelledby="prospects-preview-title">
+      <div class="card-body">
+        <div class="preview-head mb-3">
+          <h2 class="preview-title" id="prospects-preview-title">Prospects</h2>
+          <a href="{% url 'core:prospect-list' %}" class="btn btn-outline-secondary btn-sm">View all</a>
+        </div>
+        {% if dashboard.previews.prospects %}
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0 preview-table">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for prospect in dashboard.previews.prospects %}
+                  <tr>
+                    <td>
+                      <a href="{% url 'core:prospect-detail' prospect.pk %}" class="link-body-emphasis text-decoration-none">
+                        {{ prospect }}
+                      </a>
+                    </td>
+                    <td>{{ prospect.get_status_display }}</td>
+                    <td>{{ prospect.source|default:"-" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="preview-empty">No prospects available.</p>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <div class="col-12 col-xxl-4">
+    <section class="card preview-card h-100" aria-labelledby="students-preview-title">
+      <div class="card-body">
+        <div class="preview-head mb-3">
+          <h2 class="preview-title" id="students-preview-title">Students</h2>
+          <a href="{% url 'core:student-list' %}" class="btn btn-outline-secondary btn-sm">View all</a>
+        </div>
+        {% if dashboard.previews.students %}
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0 preview-table">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">Student</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Governor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for student in dashboard.previews.students %}
+                  <tr>
+                    <td>
+                      <a href="{% url 'core:student-detail' student.pk %}" class="link-body-emphasis text-decoration-none">
+                        {{ student.prospect|default:student }}
+                      </a>
+                    </td>
+                    <td>{{ student.get_enrollment_status_display|default:"-" }}</td>
+                    <td>{{ student.teacher|default:"-" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="preview-empty">No students available.</p>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <div class="col-12 col-xxl-4">
+    <section class="card preview-card h-100" aria-labelledby="enquiries-preview-title">
+      <div class="card-body">
+        <div class="preview-head mb-3">
+          <h2 class="preview-title" id="enquiries-preview-title">Enquiries</h2>
+          <a href="{% url 'core:inquiry-list' %}" class="btn btn-outline-secondary btn-sm">View all</a>
+        </div>
+        {% if dashboard.previews.inquiries %}
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0 preview-table">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">Individual</th>
+                  <th scope="col">Enquiry</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for inquiry in dashboard.previews.inquiries %}
+                  <tr>
+                    <td>
+                      {% if inquiry.student %}
+                        {{ inquiry.student.prospect|default:inquiry.student }}
+                      {% elif inquiry.prospect %}
+                        {{ inquiry.prospect }}
+                      {% else %}
+                        -
+                      {% endif %}
+                    </td>
+                    <td>
+                      <a href="{% url 'core:inquiry-detail' inquiry.pk %}" class="link-body-emphasis text-decoration-none">
+                        {{ inquiry }}
+                      </a>
+                    </td>
+                    <td>{{ inquiry.get_status_display|default:"-" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="preview-empty">No enquiries available.</p>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-12 col-lg-6">
+    <div class="card chart-card h-100">
+      <div class="card-body">
+        <h2 class="chart-title">Prospect Funnel</h2>
+        <div class="chart-sub mb-3">Pipeline stage distribution</div>
+        <div class="chart-wrap sm"><canvas id="prospectFunnelChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="card chart-card h-100">
+      <div class="card-body">
+        <h2 class="chart-title">Conversion Trend</h2>
+        <div class="chart-sub mb-3">Leads created vs conversions (last 6 months)</div>
+        <div class="chart-wrap sm"><canvas id="conversionTrendChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <div class="card chart-card h-100">
+      <div class="card-body">
+        <h2 class="chart-title">Follow-up Health</h2>
+        <div class="chart-sub mb-3">Open, in-progress, stale, and logged follow-ups</div>
+        <div class="chart-wrap sm"><canvas id="followUpHealthChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="card chart-card h-100">
+      <div class="card-body">
+        <h2 class="chart-title">Inquiry Response SLA</h2>
+        <div class="chart-sub mb-3">Avg response: {{ dashboard.kpis.avg_response_hours }}h · SLA (24h): {{ dashboard.kpis.sla_percent }}%</div>
+        <div class="chart-wrap sm"><canvas id="responseSlaChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-7">
+    <div class="card chart-card h-100">
+      <div class="card-body">
+        <h2 class="chart-title">Upcoming Sessions Capacity</h2>
+        <div class="chart-sub mb-3">Next 14 days · enrolled vs capacity</div>
+        <div class="chart-wrap lg"><canvas id="sessionsCapacityChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-xl-5">
+    <div class="card chart-card h-100">
+      <div class="card-body">
+        <h2 class="chart-title">Revenue Snapshot</h2>
+        <div class="chart-sub mb-3">
+          Invoiced: ${{ dashboard.kpis.invoiced_total|floatformat:2 }} ·
+          Collected: ${{ dashboard.kpis.collected_total|floatformat:2 }} ·
+          Overdue: ${{ dashboard.kpis.overdue_total|floatformat:2 }}
+        </div>
+        <div class="chart-wrap lg"><canvas id="revenueAgingChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  {% if dashboard.show_disbursement_block %}
+  <div class="col-12 col-lg-5">
+    <div class="card chart-card h-100">
+      <div class="card-body">
+        <h2 class="chart-title">Disbursement Status</h2>
+        <div class="chart-sub mb-3">Pending, approved, paid</div>
+        <div class="chart-wrap sm"><canvas id="disbursementStatusChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-7">
+    <div class="card chart-card h-100">
+      <div class="card-body">
+        <h2 class="chart-title">Disbursement Trend</h2>
+        <div class="chart-sub mb-3">Monthly payouts (last 6 months)</div>
+        <div class="chart-wrap sm"><canvas id="disbursementTrendChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="col-12">
+    <div class="card chart-card">
+      <div class="card-body">
+        <h2 class="chart-title">Top Source Performance</h2>
+        <div class="chart-sub mb-3">Lead volume and conversion rate by source</div>
+        <div class="chart-wrap"><canvas id="sourcePerformanceChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ dashboard.charts|json_script:"home-dashboard-charts" }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const chartsNode = document.getElementById("home-dashboard-charts");
+  const chartPayload = chartsNode ? JSON.parse(chartsNode.textContent) : {};
+
+  const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: {
+      duration: 300,
+    },
+    plugins: {
+      legend: {
+        labels: {
+          boxWidth: 10,
+          boxHeight: 10,
+        },
+      },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+      },
+    },
+  };
+
+  window.__homeDashboardCharts = window.__homeDashboardCharts || {};
+  const numericSeries = (arr) => (Array.isArray(arr) ? arr.map((v) => Number.isFinite(Number(v)) ? Number(v) : 0) : []);
+
+  const makeChart = (id, config) => {
+    const canvas = document.getElementById(id);
+    if (!canvas) return;
+    const existing = window.__homeDashboardCharts[id];
+    if (existing) {
+      existing.destroy();
+    }
+    window.__homeDashboardCharts[id] = new Chart(canvas, config);
+  };
+
+  makeChart("prospectFunnelChart", {
+    type: "bar",
+    data: {
+      labels: chartPayload.funnel?.labels || [],
+      datasets: [{
+        label: "Prospects",
+        data: numericSeries(chartPayload.funnel?.values),
+        backgroundColor: ["#5b8def", "#6c7db3", "#61a6ab", "#6ebf8f", "#adb5bd"],
+        borderRadius: 8,
+      }],
+    },
+    options: chartDefaults,
+  });
+
+  makeChart("conversionTrendChart", {
+    type: "line",
+    data: {
+      labels: chartPayload.conversion_trend?.labels || [],
+      datasets: [
+        {
+          label: "Leads",
+          data: numericSeries(chartPayload.conversion_trend?.leads),
+          borderColor: "#5b8def",
+          backgroundColor: "rgba(91, 141, 239, 0.15)",
+          fill: true,
+          tension: 0.25,
+        },
+        {
+          label: "Converted",
+          data: numericSeries(chartPayload.conversion_trend?.converted),
+          borderColor: "#35a66b",
+          backgroundColor: "rgba(53, 166, 107, 0.12)",
+          fill: true,
+          tension: 0.25,
+        },
+      ],
+    },
+    options: chartDefaults,
+  });
+
+  makeChart("followUpHealthChart", {
+    type: "doughnut",
+    data: {
+      labels: chartPayload.follow_up_health?.labels || [],
+      datasets: [{
+        data: numericSeries(chartPayload.follow_up_health?.values),
+        backgroundColor: ["#f7c948", "#5b8def", "#d95d5d", "#35a66b"],
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom" } },
+    },
+  });
+
+  makeChart("responseSlaChart", {
+    type: "doughnut",
+    data: {
+      labels: chartPayload.response_sla?.labels || [],
+      datasets: [{
+        data: numericSeries(chartPayload.response_sla?.values),
+        backgroundColor: ["#35a66b", "#f0ad4e", "#d95d5d"],
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom" } },
+    },
+  });
+
+  makeChart("sessionsCapacityChart", {
+    type: "bar",
+    data: {
+      labels: chartPayload.sessions_capacity?.labels || [],
+      datasets: [
+        {
+          label: "Capacity",
+          data: numericSeries(chartPayload.sessions_capacity?.capacity),
+          backgroundColor: "rgba(91, 141, 239, 0.35)",
+          borderRadius: 6,
+        },
+        {
+          label: "Enrolled",
+          data: numericSeries(chartPayload.sessions_capacity?.enrolled),
+          backgroundColor: "rgba(53, 166, 107, 0.85)",
+          borderRadius: 6,
+        },
+      ],
+    },
+    options: {
+      ...chartDefaults,
+      scales: {
+        x: { ticks: { maxRotation: 40, minRotation: 20 } },
+        y: { beginAtZero: true },
+      },
+    },
+  });
+
+  makeChart("revenueAgingChart", {
+    type: "bar",
+    data: {
+      labels: chartPayload.revenue_aging?.labels || [],
+      datasets: [{
+        label: "Outstanding ($)",
+        data: numericSeries(chartPayload.revenue_aging?.values),
+        backgroundColor: ["#70a1ff", "#f7b267", "#de6b48"],
+        borderRadius: 8,
+      }],
+    },
+    options: chartDefaults,
+  });
+
+  makeChart("disbursementStatusChart", {
+    type: "pie",
+    data: {
+      labels: chartPayload.disbursement_status?.labels || [],
+      datasets: [{
+        data: numericSeries(chartPayload.disbursement_status?.values),
+        backgroundColor: ["#f7c948", "#5b8def", "#35a66b"],
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom" } },
+    },
+  });
+
+  makeChart("disbursementTrendChart", {
+    type: "line",
+    data: {
+      labels: chartPayload.disbursement_trend?.labels || [],
+      datasets: [{
+        label: "Payout",
+        data: numericSeries(chartPayload.disbursement_trend?.values),
+        borderColor: "#6c7db3",
+        backgroundColor: "rgba(108, 125, 179, 0.18)",
+        fill: true,
+        tension: 0.25,
+      }],
+    },
+    options: chartDefaults,
+  });
+
+  makeChart("sourcePerformanceChart", {
+    type: "bar",
+    data: {
+      labels: chartPayload.source_performance?.labels || [],
+      datasets: [
+        {
+          label: "Leads",
+          data: numericSeries(chartPayload.source_performance?.totals),
+          backgroundColor: "rgba(91, 141, 239, 0.75)",
+          yAxisID: "y",
+          borderRadius: 8,
+        },
+        {
+          label: "Conversion %",
+          data: numericSeries(chartPayload.source_performance?.conversion_rates),
+          type: "line",
+          borderColor: "#35a66b",
+          backgroundColor: "#35a66b",
+          tension: 0.2,
+          yAxisID: "y1",
+        },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      scales: {
+        y: { beginAtZero: true, position: "left", title: { display: true, text: "Leads" } },
+        y1: {
+          beginAtZero: true,
+          position: "right",
+          grid: { drawOnChartArea: false },
+          title: { display: true, text: "Conversion %" },
+        },
+      },
+    },
+  });
+</script>
+{% endblock %}

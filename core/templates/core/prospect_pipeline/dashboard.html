@@ -1,0 +1,62 @@
+{% extends "core/crud/base.html" %}
+
+{% block title %}Prospect Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">Prospect Dashboard</h1>
+  <div class="d-flex gap-2">
+    <a href="{% url 'core:prospect-pipeline-list' %}" class="btn btn-primary">Open Pipeline</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-2"><div class="card"><div class="card-body"><div class="text-muted small">Total Prospects</div><div class="h4 mb-0">{{ metrics.total_prospects }}</div></div></div></div>
+  <div class="col-md-2"><div class="card"><div class="card-body"><div class="text-muted small">New</div><div class="h4 mb-0">{{ metrics.new_prospects }}</div></div></div></div>
+  <div class="col-md-2"><div class="card"><div class="card-body"><div class="text-muted small">Qualified</div><div class="h4 mb-0">{{ metrics.qualified_prospects }}</div></div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">Converted to Student</div><div class="h4 mb-0">{{ metrics.converted_prospects }}</div></div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">Open/In-Progress Inquiries</div><div class="h4 mb-0">{{ metrics.open_inquiries }}</div></div></div></div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card h-100">
+      <div class="card-header">Status Breakdown</div>
+      <ul class="list-group list-group-flush">
+        {% for item in status_breakdown %}
+          <li class="list-group-item d-flex justify-content-between">
+            <span>{{ item.label }}</span>
+            <span class="badge text-bg-secondary">{{ item.value }}</span>
+          </li>
+        {% empty %}
+          <li class="list-group-item text-muted">No status data yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card h-100">
+      <div class="card-header">Recently Added Prospects</div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead><tr><th>Name</th><th>Email</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for prospect in recent_prospects %}
+              <tr>
+                <td>{{ prospect.first_name }} {{ prospect.last_name }}</td>
+                <td>{{ prospect.email }}</td>
+                <td>{{ prospect.get_status_display }}</td>
+                <td class="text-end">
+                  <a class="btn btn-outline-primary btn-sm" href="{% url 'core:prospect-pipeline-detail' prospect.pk %}">View</a>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="text-muted">No prospects yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

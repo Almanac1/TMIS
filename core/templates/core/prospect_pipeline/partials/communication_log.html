@@ -1,0 +1,35 @@
+{% load crispy_forms_tags %}
+<div id="communication-log" class="card">
+  <div class="card-header">Follow-up Communication Log</div>
+  <div class="card-body border-bottom">
+    <form method="post"
+          action="{% url 'core:prospect-pipeline-follow-up' prospect.pk %}"
+          hx-post="{% url 'core:prospect-pipeline-follow-up' prospect.pk %}"
+          hx-target="#communication-log"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+      {{ follow_up_form|crispy }}
+      <div class="d-flex justify-content-end">
+        <button class="btn btn-primary" type="submit">Log Follow-up</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="list-group list-group-flush">
+    {% for comm in communications %}
+      <div class="list-group-item">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="fw-semibold">{{ comm.subject|default:comm.get_communication_type_display }}</div>
+            <div class="small text-muted">
+              {{ comm.created_at }} | {{ comm.get_channel_display }} | {{ comm.get_delivery_status_display }}
+            </div>
+          </div>
+        </div>
+        <div class="mt-2">{{ comm.body|linebreaksbr }}</div>
+      </div>
+    {% empty %}
+      <div class="list-group-item text-muted">No communication logs yet.</div>
+    {% endfor %}
+  </div>
+</div>

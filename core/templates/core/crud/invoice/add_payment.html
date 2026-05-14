@@ -1,0 +1,46 @@
+{% extends "core/crud/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Record Payment · {{ invoice.invoice_number }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item"><a href="{% url 'core:invoice-detail' invoice.pk %}">Invoice {{ invoice.invoice_number }}</a></li>
+  <li class="breadcrumb-item active" aria-current="page">Record Payment</li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 mb-0">Record Additional Payment</h1>
+  <a class="btn btn-outline-secondary" href="{% url 'core:invoice-detail' invoice.pk %}">Back to Invoice</a>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Invoice</div><div class="fw-semibold">{{ invoice.invoice_number }}</div></div></div>
+  </div>
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Student</div><div class="fw-semibold">{{ student.prospect|default:student }}</div></div></div>
+  </div>
+  <div class="col-md-6 col-lg-2">
+    <div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Total</div><div class="fw-semibold">${{ invoice.total_amount|floatformat:2 }}</div></div></div>
+  </div>
+  <div class="col-md-6 col-lg-2">
+    <div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Paid</div><div class="fw-semibold">${{ total_paid|floatformat:2 }}</div></div></div>
+  </div>
+  <div class="col-md-6 col-lg-2">
+    <div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Outstanding</div><div class="fw-semibold text-warning">${{ outstanding_balance|floatformat:2 }}</div></div></div>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {{ form|crispy }}
+      <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-primary" type="submit">Save Payment</button>
+        <a class="btn btn-outline-secondary" href="{% url 'core:invoice-detail' invoice.pk %}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

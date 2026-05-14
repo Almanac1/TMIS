@@ -1,0 +1,45 @@
+{% extends "core/crud/base.html" %}
+
+{% block title %}Meditators{% endblock %}
+
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">Meditators</li>
+{% endblock %}
+
+{% block content %}
+<div class="crud-list-shell">
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Meditators</h1>
+      <p class="page-subtitle mb-0">System-managed transitions from Students based on Intro completion and Day 20 check-in completion.</p>
+    </div>
+  </div>
+
+  {% include "core/crud/partials/list_search_card.html" %}
+
+  <div class="table-card">
+    <div class="table-responsive">
+      <table class="table table-striped table-hover mb-0 align-middle">
+        <thead class="table-light"><tr><th>Student</th><th>Status</th><th>Governor</th><th>Intro Completed</th><th>Day 20 Completed</th><th>Transitioned At</th><th>Actions</th></tr></thead>
+        <tbody>
+          {% for meditator in meditators %}
+          <tr>
+            <td class="contact-id">{{ meditator.student.prospect }}</td>
+            <td>{{ meditator.student.get_enrollment_status_display|default:"-" }}</td>
+            <td>{{ meditator.student.teacher|default:"Unassigned" }}</td>
+            <td>{{ meditator.intro_completed_on|date:"M d, Y"|default:"-" }}</td>
+            <td>{{ meditator.day20_completed_on|date:"M d, Y"|default:"-" }}</td>
+            <td>{{ meditator.transitioned_at|date:"M d, Y H:i" }}</td>
+            <td><a class="btn btn-sm btn-outline-primary" href="{% url 'core:student-detail' meditator.student.pk %}">Open Student</a></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="empty-state"><strong>{% if search_query %}No meditators found for this search.{% else %}No meditators found for your current visibility scope.{% endif %}</strong></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if is_paginated %}<nav class="mt-3" aria-label="Meditator pagination"><ul class="pagination justify-content-end">{% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a></li>{% else %}<li class="page-item disabled"><span class="page-link">Previous</span></li>{% endif %}<li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>{% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a></li>{% else %}<li class="page-item disabled"><span class="page-link">Next</span></li>{% endif %}</ul></nav>{% endif %}
+</div>
+{% endblock %}

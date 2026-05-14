@@ -1,0 +1,21 @@
+{% if show_search %}
+<div class="search-card card shadow-sm mb-3">
+  <div class="card-body py-3 px-3 px-md-4">
+    <form method="get">
+      <label for="list-search-input" class="search-label form-label mb-2">{{ search_label|default:"Search" }}</label>
+      <div class="search-row d-grid" style="grid-template-columns:minmax(0,1fr) auto auto;gap:.55rem;align-items:center;">
+        <input
+          id="list-search-input"
+          type="text"
+          name="q"
+          class="form-control search-input"
+          value="{{ search_query }}"
+          placeholder="{{ search_placeholder|default:'Search records' }}"
+        >
+        <button type="submit" class="btn btn-primary search-btn">Search</button>
+        <a class="clear-link" href="{{ search_clear_url|default:request.path }}">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}

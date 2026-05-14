@@ -1,0 +1,34 @@
+{% extends "admin/base_site.html" %}
+{% load crispy_forms_tags %}
+
+{% block content %}
+  <div id="content-main">
+    <h1>Disbursement Date-Range Report</h1>
+    <form method="get" style="margin-bottom: 1.5rem;">
+      {{ form|crispy }}
+      <button type="submit" class="default">Run Report</button>
+    </form>
+
+    {% if report %}
+      <h2>Results</h2>
+      <p><strong>Period:</strong> {{ report.start_date }} to {{ report.end_date }}</p>
+      <p><strong>Report By:</strong> {{ report.report_by|title }}</p>
+      {% if report.report_by == "teacher" %}
+        <p><strong>Governor:</strong> {{ report.teacher }}</p>
+      {% else %}
+        <p><strong>Location:</strong> {{ report.location }}</p>
+      {% endif %}
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Total Disbursed Amount</td><td>{{ report.total_amount }}</td></tr>
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+{% endblock %}
