@@ -197,7 +197,7 @@ class Command(BaseCommand):
                         created["enrollments"] += 1
 
                         if rng.random() < 0.78:
-                            invoice = self._create_invoice(rng, enrollment, run_tag, i)
+                            invoice = self._create_invoice(rng, enrollment)
                             created["invoices"] += 1
 
                             payment_count = 0
@@ -512,8 +512,6 @@ class Command(BaseCommand):
         self,
         rng: random.Random,
         enrollment: Enrollment,
-        run_tag: str,
-        sequence: int,
     ) -> Invoice:
         issue_date = (enrollment.enrollment_date - timedelta(days=rng.randint(0, 2))).date()
         due_date = issue_date + timedelta(days=rng.choice([7, 14, 21]))
@@ -522,11 +520,14 @@ class Command(BaseCommand):
         taxable_base = max(Decimal("0.00"), subtotal - discount)
         tax_amount = (taxable_base * Decimal("0.05")).quantize(Decimal("0.01"))
         total_amount = (taxable_base + tax_amount).quantize(Decimal("0.01"))
+        year = issue_date.year if issue_date else timezone.localdate().year
+        course_code = (enrollment.course.code or "GEN").upper()
+        invoice_number = self._generate_course_invoice_number(course_code=course_code, year=year)
 
         invoice = Invoice.objects.create(
             owner=enrollment.student.owner,
             enrollment=enrollment,
-            invoice_number=f"INV-{run_tag}-{sequence}-{enrollment.id}",
+            invoice_number=invoice_number,
             issue_date=issue_date,
             due_date=due_date,
             subtotal=subtotal,
@@ -545,6 +546,28 @@ class Command(BaseCommand):
             notes="Fictional invoice.",
         )
         return invoice
+
+    def _generate_course_invoice_number(self, *, course_code: str, year: int) -> str:
+        prefix = f"{course_code}-{year}-"
+        latest = (
+            Invoice.objects.filter(invoice_number__startswith=prefix)
+            .order_by("-invoice_number")
+            .values_list("invoice_number", flat=True)
+            .first()
+        )
+        sequence = 0
+        if latest:
+            try:
+                sequence = int(str(latest).rsplit("-", 1)[-1])
+            except (ValueError, TypeError):
+                sequence = 0
+        for _ in range(200):
+            sequence += 1
+            candidate = f"{prefix}{sequence:04d}"
+            if not Invoice.objects.filter(invoice_number=candidate).exists():
+                return candidate
+        fallback = timezone.now().strftime("%H%M%S")
+        return f"{course_code}-{year}-{fallback}"
 
     def _create_payment(
         self,

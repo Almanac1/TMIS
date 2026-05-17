@@ -1,1 +1,112 @@
-{% extends "core/crud/model_list.html" %}
+{% extends "core/crud/base.html" %}
+
+{% block title %}{{ model_name_plural }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">List</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .enroll-table th,
+  .enroll-table td {
+    vertical-align: middle;
+    padding: 0.55rem 0.65rem;
+  }
+  .enroll-id,
+  .enroll-session {
+    white-space: nowrap;
+  }
+  .enroll-student,
+  .enroll-course,
+  .enroll-invoice {
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .enroll-actions {
+    white-space: nowrap;
+  }
+  .enroll-actions .btn {
+    padding: 0.2rem 0.55rem;
+    font-size: 0.8rem;
+  }
+  .enroll-chip {
+    display: inline-block;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    white-space: nowrap;
+    background: #eef2ff;
+    color: #3730a3;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="crud-list-shell">
+  <div class="page-head">
+    <h1 class="page-title">{{ model_name_plural }}</h1>
+    <div class="page-actions">
+      <a class="btn btn-primary" href="{% url create_url_name %}">Create {{ model_name }}</a>
+      <a class="btn btn-outline-secondary" href="{% url 'core:home' %}">All Models</a>
+    </div>
+  </div>
+
+  {% include "core/crud/partials/list_search_card.html" %}
+
+  <div class="table-card">
+    <div class="table-responsive">
+      <table class="table table-striped table-hover mb-0 align-middle enroll-table">
+        <thead class="table-light">
+          <tr>
+            <th>ID</th>
+            <th>Student</th>
+            <th>Course</th>
+            <th>Governor</th>
+            <th>Session</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for obj in object_list %}
+          <tr>
+            <td class="enroll-id">{{ obj.pk }}</td>
+            <td class="enroll-student">{{ obj.student.prospect|default:obj.student }}</td>
+            <td class="enroll-course">{{ obj.course.name|default:"-" }}</td>
+            <td class="enroll-session">{{ obj.teacher|default:"-" }}</td>
+            <td class="enroll-session">{{ obj.session.start_date|date:"Y-m-d" }}</td>
+            <td>
+              <span class="enroll-chip">
+                {{ obj.get_status_display }}
+              
+              </span>
+            </td>
+            <td class="enroll-actions">
+              <div class="actions d-flex align-items-center gap-2" role="group">
+                <a class="btn btn-outline-primary" href="{% url detail_url_name obj.pk %}">View</a>
+                <a class="btn btn-outline-secondary" href="{% url update_url_name obj.pk %}">Edit</a>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="empty-state">
+              <strong>
+                {% if search_query %}
+                  No enrollments found for this search.
+                {% else %}
+                  No records found.
+                {% endif %}
+              </strong>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

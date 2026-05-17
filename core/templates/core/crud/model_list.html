@@ -29,6 +29,10 @@
           <tr>
             <th>ID</th>
             <th>{{ model_name }}</th>
+            {% if model_slug == "contact" %}
+              <th>Email</th>
+              <th>Telephone</th>
+            {% endif %}
             <th>Actions</th>
           </tr>
         </thead>
@@ -39,36 +43,40 @@
             <td>
               <a class="link-primary fw-semibold" href="{% url detail_url_name obj.pk %}">{{ obj }}</a>
             </td>
+            {% if model_slug == "contact" %}
+              <td class="text-nowrap">
+                {% if obj.email %}
+                  <a href="mailto:{{ obj.email }}" class="text-decoration-none">{{ obj.email }}</a>
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+              <td class="text-nowrap">
+                {% if obj.phone_number %}
+                  <a href="tel:{{ obj.phone_number }}" class="text-decoration-none">{{ obj.phone_number }}</a>
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+            {% endif %}
             <td>
               <div class="actions d-flex flex-wrap align-items-center gap-2" role="group">
-                <a class="btn btn-outline-secondary" href="{% url update_url_name obj.pk %}">Edit</a>
-                {% if model_slug == "contact" %}
-                  {% if obj.has_converted_prospect %}
-                    <span class="badge text-bg-success-subtle border border-success-subtle text-success-emphasis">
-                      <i class="bi bi-check-circle-fill me-1"></i>Converted to Prospect
-                    </span>
-                    <a class="btn btn-sm btn-outline-success" href="{% url 'core:prospect-detail' obj.prospect.pk %}">Open Prospect</a>
-                  {% else %}
-                    <a class="btn btn-primary" href="{% url 'core:contact-convert-to-prospect' obj.pk %}">
-                      <i class="bi bi-person-plus-fill me-1"></i>Convert to Prospect
-                    </a>
-                  {% endif %}
-                {% endif %}
+                <a class="btn btn-sm btn-outline-secondary" href="{% url update_url_name obj.pk %}">Edit</a>
                 {% if can_archive %}
                 <form method="post" action="{% url archive_url_name obj.pk %}" class="d-inline">
                   {% csrf_token %}
-                  <button type="submit" class="btn btn-outline-warning">Mark Inactive</button>
+                  <button type="submit" class="btn btn-sm btn-outline-warning">Mark Inactive</button>
                 </form>
                 {% endif %}
                 {% if can_delete %}
-                <a class="btn btn-outline-danger" href="{% url delete_url_name obj.pk %}">Delete</a>
+                <a class="btn btn-sm btn-outline-danger" href="{% url delete_url_name obj.pk %}">Delete</a>
                 {% endif %}
               </div>
             </td>
           </tr>
           {% empty %}
           <tr>
-            <td colspan="3" class="empty-state">
+            <td colspan="{% if model_slug == 'contact' %}5{% else %}3{% endif %}" class="empty-state">
               <strong>
                 {% if search_query %}
                   No {{ model_name_plural|lower }} found for this search.

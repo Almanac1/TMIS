@@ -1,1 +1,122 @@
-{% extends "core/crud/model_form.html" %}
+{% extends "core/crud/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% if object %}Edit{% else %}Create{% endif %} Prospect{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">
+    {% if object %}Edit #{{ object.pk }}{% else %}Create{% endif %}
+  </li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">{% if object %}Edit{% else %}Create{% endif %} Prospect</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to Prospects</a>
+    {% if object %}
+      <a class="btn btn-outline-primary" href="{% url detail_url_name object.pk %}">View details</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    {% crispy form %}
+    <div class="d-flex gap-2 mt-3">
+      {% if object %}
+        <a class="btn btn-outline-secondary" href="{% url detail_url_name object.pk %}">Cancel</a>
+      {% else %}
+        <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Cancel</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const toggle = document.getElementById("id_prospect_is_existing_contact");
+    const existingWrap = document.getElementById("existing-contact-wrap");
+    const newContactWrap = document.getElementById("new-contact-wrap");
+    const selectedContact = document.getElementById("id_selected_contact");
+    const searchInput = document.getElementById("existing-contact-search");
+    const resultsWrap = document.getElementById("existing-contact-results");
+    const selectedPreview = document.getElementById("existing-contact-selected");
+    const firstName = document.getElementById("id_first_name");
+    const lastName = document.getElementById("id_last_name");
+    const email = document.getElementById("id_email");
+    const phone = document.getElementById("id_phone_number");
+    const endpoint = "{% url 'core:contact-autocomplete' %}";
+
+    if (!toggle || !existingWrap || !newContactWrap || !selectedContact) return;
+
+    function applyMode() {
+      const useExisting = toggle.checked;
+      existingWrap.classList.toggle("d-none", !useExisting);
+      newContactWrap.classList.toggle("d-none", useExisting);
+      if (useExisting) {
+        [firstName, lastName, email, phone].forEach((el) => {
+          if (el) el.value = "";
+        });
+      } else {
+        selectedContact.value = "";
+        if (selectedPreview) selectedPreview.classList.add("d-none");
+      }
+    }
+
+    function renderSelection(item) {
+      if (!selectedPreview) return;
+      selectedPreview.classList.remove("d-none");
+      selectedPreview.textContent = `${item.name} — ${item.email || "-"} — ${item.phone || "-"}`;
+    }
+
+    let timer = null;
+    async function searchContacts() {
+      const q = (searchInput.value || "").trim();
+      if (q.length < 2) {
+        resultsWrap.innerHTML = "";
+        return;
+      }
+      resultsWrap.innerHTML = '<div class="list-group-item text-muted">Searching...</div>';
+      const params = new URLSearchParams({ q });
+      const response = await fetch(`${endpoint}?${params.toString()}`, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+      const payload = await response.json();
+      const rows = payload.results || [];
+      if (!rows.length) {
+        resultsWrap.innerHTML = '<div class="list-group-item text-muted">No contacts found.</div>';
+        return;
+      }
+      resultsWrap.innerHTML = "";
+      rows.forEach((item) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "list-group-item list-group-item-action";
+        btn.textContent = `${item.name} — ${item.email || "-"} — ${item.phone || "-"}`;
+        btn.addEventListener("click", function () {
+          selectedContact.value = String(item.id);
+          renderSelection(item);
+          resultsWrap.innerHTML = "";
+        });
+        resultsWrap.appendChild(btn);
+      });
+    }
+
+    toggle.addEventListener("change", applyMode);
+    if (searchInput) {
+      searchInput.addEventListener("input", function () {
+        clearTimeout(timer);
+        timer = setTimeout(searchContacts, 250);
+      });
+    }
+
+    if (selectedContact.value && selectedContact.options.length) {
+      const opt = selectedContact.options[selectedContact.selectedIndex];
+      if (opt && opt.text) {
+        renderSelection({ name: opt.text, email: "", phone: "" });
+      }
+    }
+    applyMode();
+  })();
+</script>
+{% endblock %}

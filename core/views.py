@@ -72,6 +72,7 @@ from .services.disbursement_product_reporting import get_disbursement_reporting_
 from .services.ownership import scope_queryset_for_user
 from .services.teacher_earnings import get_teacher_earnings_dashboard_data
 from .services.home_dashboard import get_home_dashboard_data
+from .services.invoicing import generate_invoice_for_enrollment
 
 
 @require_POST
@@ -334,23 +335,7 @@ class ContactConvertToProspectView(ProductLoginRequiredMixin, View):
     def get(self, request, pk):
         contact = self._get_contact(request, pk)
         if contact.has_converted_prospect:
-            existing = getattr(contact, "prospect", None) or contact.converted_prospect
-            if existing and (
-                not contact.converted_to_prospect
-                or contact.converted_prospect_id != existing.pk
-                or contact.converted_at is None
-            ):
-                contact.converted_to_prospect = True
-                contact.converted_prospect = existing
-                contact.converted_at = contact.converted_at or timezone.now()
-                contact.save(
-                    update_fields=[
-                        "converted_to_prospect",
-                        "converted_prospect",
-                        "converted_at",
-                        "updated_at",
-                    ]
-                )
+            existing = getattr(contact, "prospect", None)
             messages.info(
                 request,
                 f"{contact} is already linked to Prospect #{existing.pk}.",
@@ -382,32 +367,9 @@ class ContactConvertToProspectView(ProductLoginRequiredMixin, View):
                     if not request.user.is_superuser:
                         form.instance.owner = request.user
                     prospect = form.save()
-                    contact.converted_to_prospect = True
-                    contact.converted_prospect = prospect
-                    contact.converted_at = timezone.now()
-                    contact.save(
-                        update_fields=[
-                            "converted_to_prospect",
-                            "converted_prospect",
-                            "converted_at",
-                            "updated_at",
-                        ]
-                    )
             except IntegrityError:
                 existing = Prospect.objects.filter(contact=contact).first()
                 if existing:
-                    contact.converted_to_prospect = True
-                    contact.converted_prospect = existing
-                    if contact.converted_at is None:
-                        contact.converted_at = timezone.now()
-                    contact.save(
-                        update_fields=[
-                            "converted_to_prospect",
-                            "converted_prospect",
-                            "converted_at",
-                            "updated_at",
-                        ]
-                    )
                     messages.info(
                         request,
                         f"{contact} is already linked to Prospect #{existing.pk}.",
@@ -981,17 +943,93 @@ class ProspectCreateView(BaseCreateView):
     form_class = ProspectForm
     fields = None
 
+    def form_valid(self, form):
+        if not form.instance.owner_id:
+            form.instance.owner = self.request.user
+        return super().form_valid(form)
+
 
 class ProspectUpdateView(BaseUpdateView):
     model = Prospect
     form_class = ProspectForm
     fields = None
 
+    def form_valid(self, form):
+        if not form.instance.owner_id:
+            form.instance.owner = self.request.user
+        return super().form_valid(form)
+
 
 class EnrollmentCreateView(BaseCreateView):
     model = Enrollment
     form_class = EnrollmentForm
     fields = None
+
+    def form_valid(self, form):
+        person_type = form.cleaned_data.get("person_type")
+
+        try:
+            with transaction.atomic():
+                student = self._resolve_student_for_enrollment(form, person_type=person_type)
+                form.instance.student = student
+                response = super().form_valid(form)
+                generate_invoice_for_enrollment(self.object)
+        except ValidationError as exc:
+            form.add_error(None, " ".join(exc.messages))
+            return self.form_invalid(form)
+        except Exception:
+            form.add_error(None, "Unable to create enrollment. Please review the form and try again.")
+            return self.form_invalid(form)
+
+        messages.success(self.request, "Enrollment created and invoice generated successfully.")
+        return response
+
+    def _resolve_student_for_enrollment(self, form, *, person_type):
+        if person_type == "student":
+            student = form.cleaned_data.get("student")
+            if not student:
+                raise ValidationError("Select an existing student.")
+            return student
+
+        if person_type == "prospect":
+            prospect = form.cleaned_data.get("prospect")
+            if not prospect:
+                raise ValidationError("Select an existing prospect.")
+            student, _ = prospect.convert_to_student()
+            return student
+
+        if person_type == "contact":
+            contact = form.cleaned_data.get("contact")
+            if not contact:
+                raise ValidationError("Select an existing contact.")
+            prospect, _ = contact.convert_to_prospect(
+                owner=self.request.user if not self.request.user.is_superuser else None,
+                source="Enrollment Conversion",
+                notes="Created from Enrollment workflow.",
+            )
+            student, _ = prospect.convert_to_student()
+            return student
+
+        first_name = (form.cleaned_data.get("new_first_name") or "").strip()
+        last_name = (form.cleaned_data.get("new_last_name") or "").strip()
+        email = (form.cleaned_data.get("new_email") or "").strip()
+        phone = (form.cleaned_data.get("new_phone_number") or "").strip()
+        source = (form.cleaned_data.get("new_source") or "").strip()
+        notes = (form.cleaned_data.get("new_notes") or "").strip()
+
+        contact, _ = Contact.get_or_create_from_identity(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            phone_number=phone,
+        )
+        prospect, _ = contact.convert_to_prospect(
+            owner=self.request.user if not self.request.user.is_superuser else None,
+            source=source,
+            notes=notes,
+        )
+        student, _ = prospect.convert_to_student()
+        return student
 
 
 class EnrollmentUpdateView(BaseUpdateView):
@@ -1073,6 +1111,153 @@ class PaymentInvoicesForStudentView(ProductLoginRequiredMixin, View):
             for invoice in invoices
         ]
         return JsonResponse({"student_id": student.pk, "invoices": data})
+
+
+class EnrollmentPersonSearchView(ProductLoginRequiredMixin, View):
+    PAGE_SIZE = 15
+
+    def get(self, request):
+        person_type = (request.GET.get("type") or "").strip().lower()
+        query = (request.GET.get("q") or "").strip()
+        if len(query) < 2:
+            return JsonResponse({"results": []})
+
+        if person_type == "student":
+            queryset = scope_queryset_for_user(
+                queryset=Student.objects.select_related("prospect__contact"),
+                model=Student,
+                user=request.user,
+            ).filter(
+                Q(prospect__contact__first_name__icontains=query)
+                | Q(prospect__contact__last_name__icontains=query)
+                | Q(prospect__contact__email__icontains=query)
+                | Q(prospect__contact__phone_number__icontains=query)
+            )[: self.PAGE_SIZE]
+            results = [
+                {
+                    "id": obj.pk,
+                    "label": f"{obj.prospect.contact.first_name} {obj.prospect.contact.last_name}".strip(),
+                    "meta": obj.prospect.contact.email or obj.prospect.contact.phone_number or "",
+                    "badge": "Student",
+                }
+                for obj in queryset
+            ]
+            return JsonResponse({"results": results})
+
+        if person_type == "prospect":
+            queryset = scope_queryset_for_user(
+                queryset=Prospect.objects.select_related("contact"),
+                model=Prospect,
+                user=request.user,
+            ).filter(is_archived=False).filter(
+                Q(contact__first_name__icontains=query)
+                | Q(contact__last_name__icontains=query)
+                | Q(contact__email__icontains=query)
+                | Q(contact__phone_number__icontains=query)
+            )[: self.PAGE_SIZE]
+            results = [
+                {
+                    "id": obj.pk,
+                    "label": f"{obj.contact.first_name} {obj.contact.last_name}".strip(),
+                    "meta": obj.contact.email or obj.contact.phone_number or "",
+                    "badge": "Prospect",
+                }
+                for obj in queryset
+            ]
+            return JsonResponse({"results": results})
+
+        if person_type == "contact":
+            queryset = scope_queryset_for_user(
+                queryset=Contact.objects.all(),
+                model=Contact,
+                user=request.user,
+            ).filter(
+                Q(first_name__icontains=query)
+                | Q(last_name__icontains=query)
+                | Q(email__icontains=query)
+                | Q(phone_number__icontains=query)
+            )[: self.PAGE_SIZE]
+            results = [
+                {
+                    "id": obj.pk,
+                    "label": f"{obj.first_name} {obj.last_name}".strip(),
+                    "meta": obj.email or obj.phone_number or "",
+                    "badge": "Contact",
+                }
+                for obj in queryset
+            ]
+            return JsonResponse({"results": results})
+
+        return JsonResponse({"results": []})
+
+
+class ContactAutocompleteView(ProductLoginRequiredMixin, View):
+    PAGE_SIZE = 20
+
+    def get(self, request):
+        query = (request.GET.get("q") or "").strip()
+        if len(query) < 2:
+            return JsonResponse({"results": []})
+
+        contacts = scope_queryset_for_user(
+            queryset=Contact.objects.all(),
+            model=Contact,
+            user=request.user,
+        ).filter(
+            Q(first_name__icontains=query)
+            | Q(last_name__icontains=query)
+            | Q(email__icontains=query)
+            | Q(phone_number__icontains=query)
+        ).order_by("first_name", "last_name")[: self.PAGE_SIZE]
+
+        return JsonResponse(
+            {
+                "results": [
+                    {
+                        "id": contact.pk,
+                        "name": f"{contact.first_name} {contact.last_name}".strip(),
+                        "email": contact.email or "",
+                        "phone": contact.phone_number or "",
+                    }
+                    for contact in contacts
+                ]
+            }
+        )
+
+
+class EnrollmentSessionsForCourseView(ProductLoginRequiredMixin, View):
+    def get(self, request, course_id):
+        course = get_object_or_404(
+            scope_queryset_for_user(
+                queryset=Course.objects.filter(status="active"),
+                model=Course,
+                user=request.user,
+            ),
+            pk=course_id,
+        )
+        sessions = scope_queryset_for_user(
+            queryset=CourseSession.objects.select_related("course", "teacher", "location").filter(course=course),
+            model=CourseSession,
+            user=request.user,
+        ).order_by("-start_date")[:50]
+        data = [
+            {
+                "id": session.pk,
+                "label": f"{session.session_name or session.start_date.strftime('%Y-%m-%d')} | {session.teacher} | {session.location}",
+            }
+            for session in sessions
+        ]
+        return JsonResponse(
+            {
+                "course_id": course.pk,
+                "sessions": data,
+                "standard_fee": f"{course.standard_fee:.2f}",
+                "course_name": course.name,
+                "course_code": getattr(course, "code", "") or "-",
+                "additional_cost_description": getattr(course, "additional_cost_description", "")
+                or (course.description[:160] if course.description else ""),
+            }
+        )
 
 
 class StudentCreateView(BaseCreateView):

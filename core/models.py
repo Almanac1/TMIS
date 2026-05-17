@@ -207,6 +207,13 @@ class Prospect(TimeStampedModel):
         blank=True,
         related_name="prospects",
     )
+    course_interest = models.ForeignKey(
+        "Course",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="interested_prospects",
+    )
     interest_level = models.CharField(
         max_length=10,
         choices=InterestLevel.choices,
@@ -418,15 +425,6 @@ class Contact(TimeStampedModel):
     last_name = models.CharField(max_length=100)
     email = models.EmailField(blank=True, null=True)
     phone_number = models.CharField(max_length=30, blank=True, null=True)
-    converted_to_prospect = models.BooleanField(default=False)
-    converted_prospect = models.ForeignKey(
-        "Prospect",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="source_contacts",
-    )
-    converted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["first_name", "last_name"]
@@ -440,7 +438,7 @@ class Contact(TimeStampedModel):
 
     @property
     def has_converted_prospect(self) -> bool:
-        return bool(self.converted_to_prospect or self.converted_prospect_id or hasattr(self, "prospect"))
+        return hasattr(self, "prospect")
 
     def convert_to_prospect(self, *, owner=None, source: str = "", notes: str = ""):
         """

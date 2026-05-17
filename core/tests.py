@@ -26,6 +26,7 @@ from .models import (
     Student,
     Teacher,
 )
+from .services.invoicing import generate_invoice_for_enrollment
 
 
 class StudentArchiveBehaviorTests(TestCase):
@@ -242,9 +243,8 @@ class ContactProspectConversionWorkflowTests(TestCase):
         self.assertEqual(prospect.source, "Referral")
         self.assertEqual(prospect.notes, "Interested in starter course")
         self.contact.refresh_from_db()
-        self.assertTrue(self.contact.converted_to_prospect)
-        self.assertEqual(self.contact.converted_prospect_id, prospect.pk)
-        self.assertIsNotNone(self.contact.converted_at)
+        self.assertTrue(self.contact.has_converted_prospect)
+        self.assertEqual(self.contact.prospect.pk, prospect.pk)
 
     def test_convert_contact_to_prospect_is_idempotent(self):
         Prospect.objects.create(owner=self.user, contact=self.contact, status=ProspectStatus.NEW)
@@ -254,14 +254,15 @@ class ContactProspectConversionWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(Prospect.objects.filter(contact=self.contact).count(), 1)
         self.contact.refresh_from_db()
-        self.assertTrue(self.contact.converted_to_prospect)
-        self.assertIsNotNone(self.contact.converted_prospect_id)
+        self.assertTrue(self.contact.has_converted_prospect)
 
     def test_converted_contact_shows_open_prospect_action(self):
         prospect = Prospect.objects.create(owner=self.user, contact=self.contact, status=ProspectStatus.NEW)
         response = self.client.get(reverse("core:contact-list"))
-        self.assertContains(response, reverse("core:prospect-detail", kwargs={"pk": prospect.pk}))
-        self.assertContains(response, "Converted to Prospect")
+        self.assertContains(response, str(self.contact))
+        self.assertContains(response, reverse("core:contact-detail", kwargs={"pk": self.contact.pk}))
+        self.assertNotContains(response, "Converted to Prospect")
+        self.assertNotContains(response, "Open Prospect")
         self.assertNotContains(response, "Convert to Prospect")
 
     def test_unauthorized_user_cannot_convert_contact(self):
@@ -502,6 +503,129 @@ class ProspectCreatedAtBehaviorTests(TestCase):
         )
         self.assertIsNotNone(created.created_at)
 
+    def test_prospect_create_auto_creates_contact_when_missing(self):
+        response = self.client.post(
+            reverse("core:prospect-create"),
+            data={
+                "existing_contact": "",
+                "first_name": "Ama",
+                "last_name": "Boateng",
+                "email": "ama.boateng@example.com",
+                "phone_number": "+1-555-998-1000",
+                "preferred_contact_method": "email",
+                "source": "Website",
+                "status": ProspectStatus.NEW,
+                "teacher": "",
+                "interest_level": "medium",
+                "notes": "Direct prospect creation",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        prospect = Prospect.objects.get(contact__email="ama.boateng@example.com")
+        self.assertEqual(prospect.contact.first_name, "Ama")
+        self.assertEqual(prospect.contact.last_name, "Boateng")
+
+    def test_prospect_create_links_existing_contact_by_email(self):
+        contact = Contact.objects.create(
+            first_name="Kwame",
+            last_name="Asare",
+            email="kwame.asare@example.com",
+            phone_number="+1-555-888-1111",
+        )
+        response = self.client.post(
+            reverse("core:prospect-create"),
+            data={
+                "existing_contact": "",
+                "first_name": "Kwame",
+                "last_name": "Asare",
+                "email": "kwame.asare@example.com",
+                "phone_number": "+1-555-777-2222",
+                "preferred_contact_method": "email",
+                "source": "Referral",
+                "status": ProspectStatus.NEW,
+                "teacher": "",
+                "interest_level": "high",
+                "notes": "Should link existing contact",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        prospect = Prospect.objects.get(contact=contact)
+        self.assertEqual(prospect.contact_id, contact.pk)
+        self.assertEqual(Contact.objects.filter(email="kwame.asare@example.com").count(), 1)
+
+
+class ContactAutocompleteEndpointTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="contact_autocomplete_user",
+            password="safe-password-123",
+        )
+        self.client.force_login(self.user)
+        Contact.objects.create(
+            first_name="Amara",
+            last_name="Anderson",
+            email="amara@example.com",
+            phone_number="+1-555-221-1000",
+        )
+
+    def test_contact_autocomplete_returns_expected_keys(self):
+        response = self.client.get(reverse("core:contact-autocomplete"), {"q": "Am"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("results", payload)
+        self.assertTrue(payload["results"])
+        row = payload["results"][0]
+        self.assertIn("id", row)
+        self.assertIn("name", row)
+        self.assertIn("email", row)
+        self.assertIn("phone", row)
+
+    def test_existing_contact_mode_requires_selected_contact(self):
+        response = self.client.post(
+            reverse("core:prospect-create"),
+            data={
+                "prospect_is_existing_contact": "on",
+                "selected_contact": "",
+                "preferred_contact_method": "email",
+                "source": "Referral",
+                "status": ProspectStatus.NEW,
+                "interest_level": "high",
+                "notes": "Existing contact mode",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Select an existing contact.")
+
+    def test_existing_contact_mode_does_not_overwrite_contact_details(self):
+        contact = Contact.objects.create(
+            first_name="Akosua",
+            last_name="Mensah",
+            email="akosua@example.com",
+            phone_number="+1-555-987-0000",
+        )
+        response = self.client.post(
+            reverse("core:prospect-create"),
+            data={
+                "prospect_is_existing_contact": "on",
+                "selected_contact": str(contact.pk),
+                "first_name": "",
+                "last_name": "",
+                "email": "",
+                "phone_number": "",
+                "preferred_contact_method": "email",
+                "source": "Referral",
+                "status": ProspectStatus.NEW,
+                "interest_level": "medium",
+                "notes": "Use existing contact",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        contact.refresh_from_db()
+        self.assertEqual(contact.email, "akosua@example.com")
+        self.assertEqual(contact.phone_number, "+1-555-987-0000")
+        prospect = Prospect.objects.get(contact=contact)
+        self.assertEqual(prospect.contact_id, contact.pk)
+
 
 class ProspectBadLeadRuleTests(TestCase):
     def setUp(self):
@@ -614,6 +738,7 @@ class EnrollmentFormCalculationTests(TestCase):
             "status": EnrollmentStatus.ENROLLED,
             "fee_amount": fee,
             "discount_amount": discount,
+            "number_of_children_under_18": 0,
             "balance_due": "9999.99",
             "notes": "",
         }
@@ -639,6 +764,125 @@ class EnrollmentFormCalculationTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Discount amount cannot exceed fee amount.")
+
+    def test_tm_family_course_fee_calculation_applies_children_surcharge(self):
+        family_course, _ = Course.objects.update_or_create(
+            code="TM-FM",
+            defaults={
+                "name": "TM - family",
+                "category": "TM",
+                "variant": "Family",
+                "base_fee": Decimal("4500.00"),
+                "standard_fee": Decimal("4500.00"),
+                "is_active": True,
+                "status": CourseStatus.ACTIVE,
+            },
+        )
+        family_session = CourseSession.objects.create(
+            owner=self.user,
+            course=family_course,
+            teacher=self.teacher,
+            session_name="Family Cohort",
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=5),
+            location=self.location,
+            status=SessionStatus.SCHEDULED,
+        )
+        payload = self._payload(fee="0.00", discount="500.00")
+        payload["session"] = family_session.pk
+        payload["number_of_children_under_18"] = 2
+        response = self.client.post(
+            reverse("core:enrollment-create"),
+            data=payload,
+        )
+        self.assertEqual(response.status_code, 302)
+        enrollment = Enrollment.objects.latest("id")
+        self.assertEqual(enrollment.fee_amount, Decimal("6000.00"))
+        self.assertEqual(enrollment.balance_due, Decimal("5500.00"))
+
+
+class InvoiceNumberingByCourseCodeTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="invoice_numbering_user",
+            password="safe-password-123",
+        )
+        self.teacher = Teacher.objects.create(
+            first_name="Ivy",
+            last_name="Lane",
+            email="ivy.lane@example.com",
+        )
+        self.location = Location.objects.create(name="Accra Center")
+        self.course, _ = Course.objects.update_or_create(
+            code="TM-AD",
+            defaults={
+                "name": "TM - adult",
+                "category": "TM",
+                "variant": "Adult",
+                "base_fee": Decimal("3000.00"),
+                "standard_fee": Decimal("3000.00"),
+                "is_active": True,
+                "status": CourseStatus.ACTIVE,
+            },
+        )
+        self.session = CourseSession.objects.create(
+            owner=self.user,
+            course=self.course,
+            teacher=self.teacher,
+            session_name="Adult Cohort",
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=5),
+            location=self.location,
+            status=SessionStatus.SCHEDULED,
+        )
+        self.student = Student.objects.create(
+            owner=self.user,
+            prospect=Prospect.objects.create(
+                owner=self.user,
+                contact=Contact.objects.create(first_name="Kofi", last_name="Mensah"),
+            ),
+        )
+
+    def _create_enrollment(self):
+        return Enrollment.objects.create(
+            student=self.student,
+            session=self.session,
+            enrollment_date=timezone.now(),
+            status=EnrollmentStatus.ENROLLED,
+            fee_amount=Decimal("3000.00"),
+            discount_amount=Decimal("0.00"),
+            number_of_children_under_18=0,
+            balance_due=Decimal("3000.00"),
+        )
+
+    def test_invoice_number_uses_course_code_year_and_sequence(self):
+        enrollment_one = self._create_enrollment()
+        invoice_one, _ = generate_invoice_for_enrollment(enrollment_one)
+        year = timezone.localdate().year
+        self.assertRegex(invoice_one.invoice_number, rf"^TM-AD-{year}-\d{{4}}$")
+
+        second_student = Student.objects.create(
+            owner=self.user,
+            prospect=Prospect.objects.create(
+                owner=self.user,
+                contact=Contact.objects.create(first_name="Ama", last_name="Boateng"),
+            ),
+        )
+        enrollment_two = Enrollment.objects.create(
+            student=second_student,
+            session=self.session,
+            enrollment_date=timezone.now(),
+            status=EnrollmentStatus.ENROLLED,
+            fee_amount=Decimal("3000.00"),
+            discount_amount=Decimal("0.00"),
+            number_of_children_under_18=0,
+            balance_due=Decimal("3000.00"),
+        )
+        invoice_two, _ = generate_invoice_for_enrollment(enrollment_two)
+        self.assertTrue(invoice_two.invoice_number.startswith(f"TM-AD-{year}-"))
+        seq_one = int(invoice_one.invoice_number.rsplit("-", 1)[-1])
+        seq_two = int(invoice_two.invoice_number.rsplit("-", 1)[-1])
+        self.assertEqual(seq_two, seq_one + 1)
 
 
 class PaymentCreateInvoiceFilteringTests(TestCase):

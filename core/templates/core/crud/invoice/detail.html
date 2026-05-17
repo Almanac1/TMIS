@@ -23,6 +23,14 @@
   <div class="col-md-6 col-lg-3">
     <div class="card h-100 shadow-sm">
       <div class="card-body">
+        <div class="text-muted small">Invoice Number</div>
+        <div class="fw-semibold">{{ object.invoice_number }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
         <div class="text-muted small">Student</div>
         <div class="fw-semibold">{{ invoice_student.prospect|default:invoice_student }}</div>
       </div>
@@ -31,16 +39,24 @@
   <div class="col-md-6 col-lg-3">
     <div class="card h-100 shadow-sm">
       <div class="card-body">
-        <div class="text-muted small">Invoice Total</div>
-        <div class="fw-semibold">${{ object.total_amount|floatformat:2 }}</div>
+        <div class="text-muted small">Course</div>
+        <div class="fw-semibold">{{ object.enrollment.course.name|default:"-" }}</div>
       </div>
     </div>
   </div>
   <div class="col-md-6 col-lg-3">
     <div class="card h-100 shadow-sm">
       <div class="card-body">
-        <div class="text-muted small">Amount Paid</div>
-        <div class="fw-semibold">${{ total_paid|floatformat:2 }}</div>
+        <div class="text-muted small">Course Code</div>
+        <div class="fw-semibold">{{ object.enrollment.course.code|default:"-" }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Enrollment</div>
+        <div class="fw-semibold">#{{ object.enrollment.pk }}</div>
       </div>
     </div>
   </div>
@@ -58,17 +74,27 @@
 
 <div class="card shadow-sm mb-3">
   <div class="card-header bg-light fw-semibold">Invoice Details</div>
-  <div class="table-responsive">
-    <table class="table table-striped mb-0">
-      <tbody>
-        {% for label, value in object_fields %}
-          <tr>
-            <th style="width: 32%;">{{ label }}</th>
-            <td>{{ value|default:"-" }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="text-muted small">Fee Amount (Subtotal)</div>
+        <div class="fw-semibold">${{ object.subtotal|floatformat:2 }}</div>
+      </div>
+      <div class="col-md-6">
+        <div class="text-muted small">Discount</div>
+        <div class="fw-semibold">${{ object.discount_amount|floatformat:2 }}</div>
+      </div>
+      <div class="col-md-6">
+        <div class="text-muted small">Balance Due</div>
+        <div class="fw-semibold {% if outstanding_balance > 0 %}text-warning{% else %}text-success{% endif %}">
+          ${{ outstanding_balance|floatformat:2 }}
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="text-muted small">Payments Made</div>
+        <div class="fw-semibold">${{ total_paid|floatformat:2 }}</div>
+      </div>
+    </div>
   </div>
 </div>
 

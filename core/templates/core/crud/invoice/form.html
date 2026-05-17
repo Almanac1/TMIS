@@ -1,1 +1,29 @@
 {% extends "core/crud/model_form.html" %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const subtotalInput = document.getElementById("id_subtotal");
+    const discountInput = document.getElementById("id_discount_amount");
+    const totalInput = document.getElementById("id_total_amount");
+
+    if (!subtotalInput || !discountInput || !totalInput) return;
+
+    function parseMoney(value) {
+      const n = Number.parseFloat(value);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function recalc() {
+      const subtotal = parseMoney(subtotalInput.value);
+      const discount = parseMoney(discountInput.value);
+      const total = Math.max(0, subtotal - discount);
+      totalInput.value = total.toFixed(2);
+    }
+
+    subtotalInput.addEventListener("input", recalc);
+    discountInput.addEventListener("input", recalc);
+    recalc();
+  })();
+</script>
+{% endblock %}

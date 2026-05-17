@@ -1,1 +1,85 @@
-{% extends "core/crud/model_detail.html" %}
+{% extends "core/crud/base.html" %}
+
+{% block title %}Enrollment #{{ object.pk }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">Enrollment #{{ object.pk }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 mb-0">Enrollment #{{ object.pk }}</h1>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
+    <a class="btn btn-secondary" href="{% url update_url_name object.pk %}">Edit</a>
+    {% if linked_invoice %}
+      <a class="btn btn-outline-primary" href="{% url 'core:invoice-detail' linked_invoice.pk %}">Open Invoice</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Student</div>
+        <div class="fw-semibold">{{ object.student }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Course</div>
+        <div class="fw-semibold">{{ object.session.course.name|default:"-" }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Payment Status</div>
+        <div class="fw-semibold">{{ enrollment_invoice_status }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Can Start Course</div>
+        <div class="fw-semibold">{{ enrollment_can_start_course|yesno:"Yes,No" }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header bg-light fw-semibold">Linked Invoice</div>
+  <div class="card-body">
+    {% if linked_invoice %}
+      <div><strong>Invoice:</strong> {{ linked_invoice.invoice_number }}</div>
+      <div><strong>Total Amount:</strong> ${{ linked_invoice.total_amount|floatformat:2 }}</div>
+      <div><strong>Paid Amount:</strong> ${{ linked_invoice.total_paid|floatformat:2 }}</div>
+      <div><strong>Balance Due:</strong> ${{ linked_invoice.balance_due|floatformat:2 }}</div>
+      <div><strong>Status:</strong> {{ linked_invoice.payment_status }}</div>
+    {% else %}
+      <div class="text-muted">No invoice linked yet.</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-light fw-semibold">Enrollment Details</div>
+  <div class="table-responsive">
+    <table class="table table-striped mb-0">
+      <tbody>
+        {% for label, value in object_fields %}
+          <tr>
+            <th style="width: 32%;">{{ label }}</th>
+            <td>{{ value|default:"-" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

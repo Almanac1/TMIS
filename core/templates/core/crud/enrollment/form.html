@@ -1,29 +1,261 @@
-{% extends "core/crud/model_form.html" %}
+{% extends "core/crud/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% if object %}Edit{% else %}Create{% endif %} Enrollment{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">{% if object %}Edit{% else %}Create{% endif %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h1 class="h3 mb-1">{% if object %}Edit{% else %}Create{% endif %} Enrollment</h1>
+    <p class="text-muted mb-0">Enroll a student, prospect, or contact into an official TM program.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to Enrollments</a>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4">
+  <div class="card-body p-4">
+    {% crispy form %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .enroll-step-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+  }
+  .enroll-step-chip {
+    padding: .35rem .7rem;
+    border-radius: 999px;
+    border: 1px solid #e8eaf0;
+    background: #fff;
+    color: #6d7485;
+    font-size: .78rem;
+    font-weight: 600;
+  }
+  .enroll-step-chip.active {
+    background: #efe7f2;
+    color: #462850;
+    border-color: #e3d7e8;
+  }
+  .enroll-step-card {
+    transition: box-shadow .2s ease, transform .2s ease;
+  }
+  .enroll-step-card:hover {
+    box-shadow: 0 .5rem 1rem rgba(17, 24, 39, .08);
+    transform: translateY(-1px);
+  }
+  .enroll-step-kicker {
+    color: #6d7485;
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    font-weight: 700;
+    margin-bottom: .25rem;
+  }
+  .enroll-step-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+  }
+  .enroll-course-preview {
+    color: #6d7485;
+    font-size: .9rem;
+  }
+  .sticky-action-bar {
+    position: sticky;
+    bottom: 0;
+    background: rgba(255, 255, 255, .95);
+    backdrop-filter: saturate(130%) blur(2px);
+    border-top: 1px solid #eceef3;
+    padding: .9rem 0 0;
+    z-index: 50;
+  }
+  .enroll-collapse {
+    max-height: 120px;
+    opacity: 1;
+    transition: max-height .25s ease, opacity .2s ease;
+    overflow: hidden;
+  }
+  .enroll-collapse.d-none {
+    display: block !important;
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+</style>
+{% endblock %}
 
 {% block extra_js %}
 <script>
   (function () {
+    const personType = document.getElementById("id_person_type");
+    const searchWrap = document.getElementById("search-step-wrap");
+    const newProspectWrap = document.getElementById("new-prospect-wrap");
+    const searchInput = document.getElementById("entity-search-input");
+    const searchResults = document.getElementById("entity-search-results");
+    const selectedPerson = document.getElementById("selected-person");
+    const hiddenStudent = document.getElementById("id_student");
+    const hiddenProspect = document.getElementById("id_prospect");
+    const hiddenContact = document.getElementById("id_contact");
+    const courseSelect = document.getElementById("id_course");
+    const sessionSelect = document.getElementById("id_session");
+    const governorInput = document.getElementById("id_session_governor");
     const feeInput = document.getElementById("id_fee_amount");
     const discountInput = document.getElementById("id_discount_amount");
     const balanceInput = document.getElementById("id_balance_due");
+    const childrenWrap = document.getElementById("children-wrap");
+    const childrenInput = document.getElementById("id_number_of_children_under_18");
+    const summaryCourseFee = document.getElementById("summary-course-fee");
+    const summaryDiscount = document.getElementById("summary-discount");
+    const summaryChildrenRow = document.getElementById("summary-children-row");
+    const summaryChildrenFee = document.getElementById("summary-children-fee");
+    const summaryBalance = document.getElementById("summary-balance");
+    const coursePreview = document.getElementById("course-preview");
 
-    if (!feeInput || !discountInput || !balanceInput) return;
+    const searchUrl = "{% url 'core:enrollment-person-search' %}";
+    const sessionsBaseUrl = "{% url 'core:enrollment-sessions-for-course' 0 %}";
 
-    function parseMoney(value) {
-      const n = Number.parseFloat(value);
+    function parseMoney(v) {
+      const n = Number.parseFloat(v);
       return Number.isFinite(n) ? n : 0;
     }
 
-    function recalc() {
-      const fee = parseMoney(feeInput.value);
+    function updateSummary(courseFee, discount, childrenFee, balance, isFamily) {
+      summaryCourseFee.textContent = `GHS ${courseFee.toFixed(2)}`;
+      summaryDiscount.textContent = `GHS ${discount.toFixed(2)}`;
+      summaryChildrenFee.textContent = `GHS ${childrenFee.toFixed(2)}`;
+      summaryBalance.textContent = `GHS ${balance.toFixed(2)}`;
+      summaryChildrenRow.classList.toggle("d-none", !isFamily);
+    }
+
+    function setPersonSelection(field, id, label, badge) {
+      hiddenStudent.value = "";
+      hiddenProspect.value = "";
+      hiddenContact.value = "";
+      field.value = id;
+      selectedPerson.classList.remove("d-none");
+      selectedPerson.textContent = `${label} — ${badge}`;
+    }
+
+    function updatePersonSections() {
+      const value = personType.value;
+      const searchEnabled = value === "student" || value === "prospect" || value === "contact";
+      searchWrap.classList.toggle("d-none", !searchEnabled);
+      newProspectWrap.classList.toggle("d-none", value !== "new_prospect");
+      if (!searchEnabled) {
+        searchResults.innerHTML = "";
+        selectedPerson.classList.add("d-none");
+      }
+    }
+
+    let timer = null;
+    async function performSearch() {
+      const value = personType.value;
+      const q = (searchInput.value || "").trim();
+      if (q.length < 2) {
+        searchResults.innerHTML = "";
+        return;
+      }
+      const params = new URLSearchParams({ type: value, q });
+      searchResults.innerHTML = '<div class="list-group-item text-muted">Searching...</div>';
+      const response = await fetch(`${searchUrl}?${params.toString()}`, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+      const payload = await response.json();
+      const items = payload.results || [];
+      if (!items.length) {
+        searchResults.innerHTML = '<div class="list-group-item text-muted">No matches found.</div>';
+        return;
+      }
+      searchResults.innerHTML = "";
+      items.forEach((item) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "list-group-item list-group-item-action";
+        btn.textContent = `${item.label} — ${item.badge}${item.meta ? ` (${item.meta})` : ""}`;
+        btn.addEventListener("click", function () {
+          if (value === "student") setPersonSelection(hiddenStudent, item.id, item.label, item.badge);
+          if (value === "prospect") setPersonSelection(hiddenProspect, item.id, item.label, item.badge);
+          if (value === "contact") setPersonSelection(hiddenContact, item.id, item.label, item.badge);
+          searchResults.innerHTML = "";
+        });
+        searchResults.appendChild(btn);
+      });
+    }
+
+    async function loadSessionsForCourse() {
+      const courseId = courseSelect.value;
+      sessionSelect.innerHTML = '<option value="">Select a session</option>';
+      governorInput.value = "";
+      if (!courseId) {
+        recalcMoney();
+        return;
+      }
+      const url = sessionsBaseUrl.replace(/0\/?$/, `${courseId}/`);
+      const response = await fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+      const payload = await response.json();
+      const sessions = payload.sessions || [];
+      sessions.forEach((s) => {
+        const opt = document.createElement("option");
+        opt.value = String(s.id);
+        opt.textContent = s.label;
+        sessionSelect.appendChild(opt);
+      });
+      if (sessions.length) {
+        sessionSelect.value = String(sessions[0].id);
+        governorInput.value = sessions[0].label.split("|")[1]?.trim() || "";
+      }
+      const courseName = (payload.course_name || "").toLowerCase();
+      const code = payload.course_code || "-";
+      const fee = payload.standard_fee || "0.00";
+      const extra = payload.additional_cost_description || "No additional cost notes.";
+      coursePreview.innerHTML = `<strong>Code:</strong> ${code} &nbsp;|&nbsp; <strong>Base fee:</strong> GHS ${fee} <br><span class="text-muted">${extra}</span>`;
+      feeInput.value = payload.standard_fee || "0.00";
+      if (courseName === "tm - family") {
+        childrenWrap.classList.remove("d-none");
+      } else {
+        childrenWrap.classList.add("d-none");
+        childrenInput.value = 0;
+      }
+      recalcMoney();
+    }
+
+    function recalcMoney() {
+      const isFamily = !childrenWrap.classList.contains("d-none");
+      const baseFee = parseMoney(feeInput.value);
+      const children = Math.max(0, Number.parseInt(childrenInput.value || "0", 10));
+      const childrenFee = isFamily ? 750 * children : 0;
+      const fee = isFamily ? 4500 + childrenFee : baseFee;
+      feeInput.value = fee.toFixed(2);
       const discount = parseMoney(discountInput.value);
       const balance = Math.max(0, fee - discount);
       balanceInput.value = balance.toFixed(2);
+      updateSummary(fee, discount, childrenFee, balance, isFamily);
     }
 
-    feeInput.addEventListener("input", recalc);
-    discountInput.addEventListener("input", recalc);
-    recalc();
+    personType.addEventListener("change", updatePersonSections);
+    courseSelect.addEventListener("change", loadSessionsForCourse);
+    sessionSelect.addEventListener("change", function () {
+      const label = sessionSelect.options[sessionSelect.selectedIndex]?.text || "";
+      governorInput.value = label.split("|")[1]?.trim() || "";
+    });
+    discountInput.addEventListener("input", recalcMoney);
+    feeInput.addEventListener("input", recalcMoney);
+    childrenInput.addEventListener("input", recalcMoney);
+    searchInput.addEventListener("input", function () {
+      clearTimeout(timer);
+      timer = setTimeout(performSearch, 250);
+    });
+
+    updatePersonSections();
+    if (!courseSelect.value) {
+      coursePreview.innerHTML = '<span class="text-muted">Choose a course to preview code, fee, and cost notes.</span>';
+    }
+    recalcMoney();
   })();
 </script>
 {% endblock %}

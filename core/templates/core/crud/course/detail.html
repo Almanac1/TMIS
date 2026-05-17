@@ -1,1 +1,64 @@
-{% extends "core/crud/model_detail.html" %}
+{% extends "core/crud/base.html" %}
+
+{% block title %}Course {{ object.name }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">{{ object.name }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 mb-0">{{ object.name }}</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
+    <a class="btn btn-secondary" href="{% url update_url_name object.pk %}">Edit</a>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header bg-light fw-semibold">Course Details</div>
+  <div class="table-responsive">
+    <table class="table table-striped mb-0">
+      <tbody>
+      {% for label, value in object_fields %}
+        <tr>
+          <th style="width:32%;">{{ label }}</th>
+          <td>{{ value|default:"-" }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-light fw-semibold">Enrollments For This Course</div>
+  <div class="table-responsive">
+    <table class="table table-striped mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Student</th>
+          <th>Governor</th>
+          <th>Session</th>
+          <th>Status</th>
+          <th>Enrollment Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for enrollment in course_enrollments %}
+          <tr>
+            <td><a href="{% url 'core:enrollment-detail' enrollment.pk %}">{{ enrollment.pk }}</a></td>
+            <td>{{ enrollment.student }}</td>
+            <td>{{ enrollment.teacher|default:"-" }}</td>
+            <td>{{ enrollment.session|default:"-" }}</td>
+            <td>{{ enrollment.get_status_display }}</td>
+            <td>{{ enrollment.enrollment_date|date:"M d, Y" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="text-muted">No enrollments for this course yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

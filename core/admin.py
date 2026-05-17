@@ -663,8 +663,15 @@ class StudentAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
 
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
-    list_display = ("name", "format", "status", "standard_fee", "created_at")
-    search_fields = ("name",)
+    list_display = (
+        "name",
+        "format",
+        "duration_weeks",
+        "standard_fee",
+        "status",
+        "created_at",
+    )
+    search_fields = ("name", "description")
     list_filter = ("format", "status", "created_at")
     ordering = ("name",)
     readonly_fields = ("created_at", "updated_at")

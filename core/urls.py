@@ -68,6 +68,21 @@ urlpatterns = [
         views.PaymentInvoicesForStudentView.as_view(),
         name="payment-invoices-for-student",
     ),
+    path(
+        "enrollments/person-search/",
+        views.EnrollmentPersonSearchView.as_view(),
+        name="enrollment-person-search",
+    ),
+    path(
+        "enrollments/sessions-for-course/<int:course_id>/",
+        views.EnrollmentSessionsForCourseView.as_view(),
+        name="enrollment-sessions-for-course",
+    ),
+    path(
+        "contacts/autocomplete/",
+        views.ContactAutocompleteView.as_view(),
+        name="contact-autocomplete",
+    ),
 ]
 
 
