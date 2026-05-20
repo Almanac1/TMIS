@@ -67,6 +67,9 @@
     color: #6d7485;
     font-size: .9rem;
   }
+  .eligibility-hint {
+    margin-top: .6rem;
+  }
   .sticky-action-bar {
     position: sticky;
     bottom: 0;
@@ -105,7 +108,6 @@
     const hiddenContact = document.getElementById("id_contact");
     const courseSelect = document.getElementById("id_course");
     const sessionSelect = document.getElementById("id_session");
-    const governorInput = document.getElementById("id_session_governor");
     const feeInput = document.getElementById("id_fee_amount");
     const discountInput = document.getElementById("id_discount_amount");
     const balanceInput = document.getElementById("id_balance_due");
@@ -117,9 +119,18 @@
     const summaryChildrenFee = document.getElementById("summary-children-fee");
     const summaryBalance = document.getElementById("summary-balance");
     const coursePreview = document.getElementById("course-preview");
+    const formEl = document.getElementById("enrollment-form");
+    const submitButton = formEl ? formEl.querySelector('button[type="submit"], input[type="submit"]') : null;
 
     const searchUrl = "{% url 'core:enrollment-person-search' %}";
     const sessionsBaseUrl = "{% url 'core:enrollment-sessions-for-course' 0 %}";
+    const eligibilityUrl = "{% url 'core:enrollment-check-eligibility' %}";
+
+    const eligibilityHint = document.createElement("div");
+    eligibilityHint.id = "eligibility-hint";
+    eligibilityHint.className = "alert alert-secondary py-2 px-3 small eligibility-hint";
+    eligibilityHint.textContent = "Select a person and course to check eligibility.";
+    coursePreview.parentNode.insertBefore(eligibilityHint, coursePreview.nextSibling);
 
     function parseMoney(v) {
       const n = Number.parseFloat(v);
@@ -141,6 +152,7 @@
       field.value = id;
       selectedPerson.classList.remove("d-none");
       selectedPerson.textContent = `${label} — ${badge}`;
+      checkEligibility();
     }
 
     function updatePersonSections() {
@@ -152,6 +164,7 @@
         searchResults.innerHTML = "";
         selectedPerson.classList.add("d-none");
       }
+      checkEligibility();
     }
 
     let timer = null;
@@ -189,39 +202,34 @@
 
     async function loadSessionsForCourse() {
       const courseId = courseSelect.value;
-      sessionSelect.innerHTML = '<option value="">Select a session</option>';
-      governorInput.value = "";
+      if (sessionSelect) sessionSelect.value = "";
       if (!courseId) {
         recalcMoney();
+        checkEligibility();
         return;
       }
       const url = sessionsBaseUrl.replace(/0\/?$/, `${courseId}/`);
       const response = await fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } });
       const payload = await response.json();
       const sessions = payload.sessions || [];
-      sessions.forEach((s) => {
-        const opt = document.createElement("option");
-        opt.value = String(s.id);
-        opt.textContent = s.label;
-        sessionSelect.appendChild(opt);
-      });
       if (sessions.length) {
-        sessionSelect.value = String(sessions[0].id);
-        governorInput.value = sessions[0].label.split("|")[1]?.trim() || "";
+        if (sessionSelect) sessionSelect.value = String(sessions[0].id);
       }
       const courseName = (payload.course_name || "").toLowerCase();
+      const courseCode = String(payload.course_code || "").toUpperCase().replace(/-/g, "");
       const code = payload.course_code || "-";
       const fee = payload.standard_fee || "0.00";
       const extra = payload.additional_cost_description || "No additional cost notes.";
       coursePreview.innerHTML = `<strong>Code:</strong> ${code} &nbsp;|&nbsp; <strong>Base fee:</strong> GHS ${fee} <br><span class="text-muted">${extra}</span>`;
       feeInput.value = payload.standard_fee || "0.00";
-      if (courseName === "tm - family") {
+      if (courseCode === "TMF" || courseCode === "TMFM" || courseName.includes("family")) {
         childrenWrap.classList.remove("d-none");
       } else {
         childrenWrap.classList.add("d-none");
         childrenInput.value = 0;
       }
       recalcMoney();
+      checkEligibility();
     }
 
     function recalcMoney() {
@@ -237,12 +245,56 @@
       updateSummary(fee, discount, childrenFee, balance, isFamily);
     }
 
+    function selectedPersonContext() {
+      const type = (personType.value || "").trim();
+      if (type === "student" && hiddenStudent.value) return { person_type: "student", person_id: hiddenStudent.value };
+      if (type === "prospect" && hiddenProspect.value) return { person_type: "prospect", person_id: hiddenProspect.value };
+      if (type === "contact" && hiddenContact.value) return { person_type: "contact", person_id: hiddenContact.value };
+      return null;
+    }
+
+    async function checkEligibility() {
+      if (!eligibilityHint) return;
+      const courseId = courseSelect.value;
+      const ctx = selectedPersonContext();
+      if (!courseId) {
+        eligibilityHint.className = "alert alert-secondary py-2 px-3 small eligibility-hint";
+        eligibilityHint.textContent = "Select a course to check eligibility.";
+        if (submitButton) submitButton.disabled = false;
+        return;
+      }
+      if (!ctx) {
+        eligibilityHint.className = "alert alert-secondary py-2 px-3 small eligibility-hint";
+        eligibilityHint.textContent = "Select a person to preview eligibility.";
+        if (submitButton) submitButton.disabled = false;
+        return;
+      }
+      const params = new URLSearchParams({
+        person_type: ctx.person_type,
+        person_id: ctx.person_id,
+        course_id: courseId,
+      });
+      try {
+        const response = await fetch(`${eligibilityUrl}?${params.toString()}`, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+        const payload = await response.json();
+        if (payload.eligible) {
+          eligibilityHint.className = "alert alert-success py-2 px-3 small eligibility-hint";
+          eligibilityHint.textContent = payload.message || "Eligible";
+          if (submitButton) submitButton.disabled = false;
+        } else {
+          eligibilityHint.className = "alert alert-warning py-2 px-3 small eligibility-hint";
+          eligibilityHint.textContent = payload.message || "Missing prerequisite.";
+          if (submitButton) submitButton.disabled = true;
+        }
+      } catch (e) {
+        eligibilityHint.className = "alert alert-secondary py-2 px-3 small eligibility-hint";
+        eligibilityHint.textContent = "Could not check eligibility right now.";
+        if (submitButton) submitButton.disabled = false;
+      }
+    }
+
     personType.addEventListener("change", updatePersonSections);
     courseSelect.addEventListener("change", loadSessionsForCourse);
-    sessionSelect.addEventListener("change", function () {
-      const label = sessionSelect.options[sessionSelect.selectedIndex]?.text || "";
-      governorInput.value = label.split("|")[1]?.trim() || "";
-    });
     discountInput.addEventListener("input", recalcMoney);
     feeInput.addEventListener("input", recalcMoney);
     childrenInput.addEventListener("input", recalcMoney);
@@ -256,6 +308,7 @@
       coursePreview.innerHTML = '<span class="text-muted">Choose a course to preview code, fee, and cost notes.</span>';
     }
     recalcMoney();
+    checkEligibility();
   })();
 </script>
 {% endblock %}

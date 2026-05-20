@@ -3,10 +3,12 @@ from datetime import timedelta
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core import mail
-from django.test import TestCase
+from django.test import TestCase, SimpleTestCase
 from django.test.utils import override_settings
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from .models import (
     Communication,
@@ -27,6 +29,22 @@ from .models import (
     Teacher,
 )
 from .services.invoicing import generate_invoice_for_enrollment
+from .services.enrollment_eligibility import is_eligible_for_course
+from .forms import EnrollmentForm
+
+
+class EnrollmentFamilyDetectionUnitTests(SimpleTestCase):
+    def test_tm_family_detected_by_code(self):
+        course = SimpleNamespace(code="TMf", name="Anything")
+        self.assertTrue(EnrollmentForm._is_tm_family_course(course))
+
+    def test_tm_family_detected_by_name(self):
+        course = SimpleNamespace(code="", name="TM - family")
+        self.assertTrue(EnrollmentForm._is_tm_family_course(course))
+
+    def test_non_family_not_detected(self):
+        course = SimpleNamespace(code="TMa", name="TM - adult")
+        self.assertFalse(EnrollmentForm._is_tm_family_course(course))
 
 
 class StudentArchiveBehaviorTests(TestCase):
@@ -710,7 +728,7 @@ class EnrollmentFormCalculationTests(TestCase):
         )
         self.location = Location.objects.create(name="Toronto Center")
         self.course = Course.objects.create(
-            name="TM Intro Program",
+            name="TM - adult",
             format=CourseFormat.IN_PERSON,
             status=CourseStatus.ACTIVE,
         )
@@ -756,6 +774,38 @@ class EnrollmentFormCalculationTests(TestCase):
         self.assertEqual(response.status_code, 302)
         enrollment = Enrollment.objects.latest("id")
         self.assertEqual(str(enrollment.balance_due), "90.00")
+
+    def test_enrollment_submission_creates_invoice_and_uses_existing_numbering_convention(self):
+        response = self.client.post(
+            reverse("core:enrollment-create"),
+            data=self._payload(),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        redirect_chain = response.redirect_chain
+        self.assertTrue(redirect_chain)
+        self.assertEqual(redirect_chain[-1][1], 302)
+        enrollment = Enrollment.objects.latest("id")
+        invoice = Invoice.objects.get(enrollment=enrollment)
+        year = timezone.localdate().year
+        self.assertRegex(invoice.invoice_number, rf"^TMa-{year}-\d{{4}}$")
+        self.assertIn(
+            f"Enrollment completed and invoice {invoice.invoice_number} generated successfully.",
+            response.content.decode(),
+        )
+        self.assertEqual(response.request["PATH_INFO"], reverse("core:invoice-detail", kwargs={"pk": invoice.pk}))
+
+    def test_invoice_list_displays_generated_invoices(self):
+        self.client.post(reverse("core:enrollment-create"), data=self._payload())
+        invoice = Invoice.objects.latest("id")
+        response = self.client.get(reverse("core:invoice-list"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, invoice.invoice_number)
+
+    def test_manual_invoice_create_redirects_to_enrollment_create(self):
+        response = self.client.get(reverse("core:invoice-create"))
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse("core:enrollment-create"))
 
     def test_discount_cannot_exceed_fee(self):
         response = self.client.post(
@@ -1204,3 +1254,129 @@ class CommunicationEmailSendTests(TestCase):
         response = self._send(recipient_type="prospect", prospect_id=no_email_prospect.pk)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Selected recipient does not have an email address.")
+
+
+class EnrollmentEligibilityProgressionTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="eligibility_user",
+            password="safe-password-123",
+        )
+        self.client.force_login(self.user)
+        self.teacher = Teacher.objects.create(
+            first_name="Eli",
+            last_name="Guardian",
+            email="eli.guardian@example.com",
+        )
+        self.location = Location.objects.create(name="Eligibility Center")
+        self.student = Student.objects.create(
+            owner=self.user,
+            prospect=Prospect.objects.create(
+                owner=self.user,
+                contact=Contact.objects.create(first_name="Nii", last_name="K.", email="nii@example.com"),
+            ),
+        )
+        self.tm = SimpleNamespace(name="TM - adult", code="TMa")
+        self.at1 = SimpleNamespace(name="Advanced Technique 1", code="AT1")
+        self.at2 = SimpleNamespace(name="Advanced Technique 2", code="AT2")
+        self.at3 = SimpleNamespace(name="Advanced Technique 3", code="AT3")
+        self.at4 = SimpleNamespace(name="Advanced Technique 4", code="AT4")
+        self.al = SimpleNamespace(name="TM-Sidhi", code="AL")
+
+    def test_person_with_no_enrollment_cannot_enroll_in_at1(self):
+        with patch("core.services.enrollment_eligibility.get_person_enrolled_course_codes", return_value=set()):
+            self.assertFalse(is_eligible_for_course(self.student, self.at1))
+
+    def test_person_with_tm_can_enroll_in_at1(self):
+        with patch("core.services.enrollment_eligibility.get_person_enrolled_course_codes", return_value={"TM"}):
+            self.assertTrue(is_eligible_for_course(self.student, self.at1))
+
+    def test_person_with_only_tm_cannot_enroll_in_at2(self):
+        with patch("core.services.enrollment_eligibility.get_person_enrolled_course_codes", return_value={"TM"}):
+            self.assertFalse(is_eligible_for_course(self.student, self.at2))
+
+    def test_person_with_tm_and_at1_can_enroll_in_at2(self):
+        with patch("core.services.enrollment_eligibility.get_person_enrolled_course_codes", return_value={"TM", "AT1"}):
+            self.assertTrue(is_eligible_for_course(self.student, self.at2))
+
+    def test_person_with_tm_at1_at2_can_enroll_in_at3(self):
+        with patch("core.services.enrollment_eligibility.get_person_enrolled_course_codes", return_value={"TM", "AT1", "AT2"}):
+            self.assertTrue(is_eligible_for_course(self.student, self.at3))
+
+    def test_person_with_tm_at1_at2_at3_can_enroll_in_at4(self):
+        with patch("core.services.enrollment_eligibility.get_person_enrolled_course_codes", return_value={"TM", "AT1", "AT2", "AT3"}):
+            self.assertTrue(is_eligible_for_course(self.student, self.at4))
+
+    def test_person_with_full_chain_can_enroll_in_al(self):
+        with patch("core.services.enrollment_eligibility.get_person_enrolled_course_codes", return_value={"TM", "AT1", "AT2", "AT3", "AT4"}):
+            self.assertTrue(is_eligible_for_course(self.student, self.al))
+
+    def _integration_setup_for_at1(self):
+        tm_course = Course.objects.filter(name__icontains="TM").first()
+        at_course = Course.objects.filter(name__icontains="Advanced Technique").first()
+        if not tm_course or not at_course:
+            self.skipTest("Required seeded courses not available in this environment.")
+        tm_session = CourseSession.objects.create(
+            owner=self.user,
+            course=tm_course,
+            teacher=self.teacher,
+            session_name="TM Session",
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=2),
+            location=self.location,
+            status=SessionStatus.SCHEDULED,
+        )
+        at_session = CourseSession.objects.create(
+            owner=self.user,
+            course=at_course,
+            teacher=self.teacher,
+            session_name="AT Session",
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=2),
+            location=self.location,
+            status=SessionStatus.SCHEDULED,
+        )
+        return tm_course, at_course, tm_session, at_session
+
+    def _payload(self, course, session):
+        return {
+            "person_type": "student",
+            "student": self.student.pk,
+            "prospect": "",
+            "contact": "",
+            "course": course.pk,
+            "session": session.pk,
+            "enrollment_date": timezone.localdate().isoformat(),
+            "status": EnrollmentStatus.ENROLLED,
+            "fee_amount": "100.00",
+            "discount_amount": "0.00",
+            "number_of_children_under_18": 0,
+            "balance_due": "100.00",
+            "new_first_name": "",
+            "new_last_name": "",
+            "new_email": "",
+            "new_phone_number": "",
+            "new_source": "",
+            "new_notes": "",
+        }
+
+    def test_invalid_submission_does_not_create_enrollment_or_invoice(self):
+        _, at_course, _, at_session = self._integration_setup_for_at1()
+        before_enrollments = Enrollment.objects.count()
+        before_invoices = Invoice.objects.count()
+        response = self.client.post(reverse("core:enrollment-create"), data=self._payload(at_course, at_session))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "must first enroll")
+        self.assertEqual(Enrollment.objects.count(), before_enrollments)
+        self.assertEqual(Invoice.objects.count(), before_invoices)
+
+    def test_eligibility_endpoint_returns_missing(self):
+        _, at_course, _, _ = self._integration_setup_for_at1()
+        response = self.client.get(
+            reverse("core:enrollment-check-eligibility"),
+            {"person_type": "student", "person_id": self.student.pk, "course_id": at_course.pk},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["eligible"])
+        self.assertIn("TM", payload["missing"])

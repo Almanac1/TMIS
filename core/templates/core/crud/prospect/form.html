@@ -22,15 +22,54 @@
 <div class="card shadow-sm">
   <div class="card-body">
     {% crispy form %}
-    <div class="d-flex gap-2 mt-3">
-      {% if object %}
-        <a class="btn btn-outline-secondary" href="{% url detail_url_name object.pk %}">Cancel</a>
-      {% else %}
-        <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Cancel</a>
-      {% endif %}
-    </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .prospect-section-card {
+    background: #fff;
+    border: 1px solid #eceef3;
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .prospect-section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: .9rem;
+  }
+  .prospect-toggle-row .form-check {
+    margin-bottom: 0;
+    padding: .55rem .75rem;
+    border: 1px solid #eceef3;
+    border-radius: 10px;
+    background: #fafbff;
+  }
+  .prospect-toggle-row .form-check-input {
+    margin-top: .2rem;
+  }
+  .prospect-action-bar {
+    position: sticky;
+    bottom: 0;
+    padding-top: .9rem;
+    border-top: 1px solid #eceef3;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(2px);
+    z-index: 20;
+  }
+  #existing-contact-results {
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  @media (max-width: 991.98px) {
+    .prospect-section-card {
+      padding: .85rem;
+    }
+  }
+</style>
 {% endblock %}
 
 {% block extra_js %}

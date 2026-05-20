@@ -1,0 +1,269 @@
+{% extends "core/crud/base.html" %}
+
+{% block title %}Contact #{{ object.pk }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">Detail #{{ object.pk }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="contact-detail-page">
+  <header class="contact-detail-header">
+    <div>
+      <h1 class="contact-title">{{ object }}</h1>
+      <div class="contact-status-row" aria-label="Contact status">
+        {% if object.has_converted_prospect %}
+          <span class="contact-chip contact-chip-success">Converted to Prospect</span>
+        {% else %}
+          <span class="contact-chip contact-chip-neutral">Not Converted</span>
+        {% endif %}
+        <span class="contact-chip contact-chip-neutral">Contact ID: {{ object.pk }}</span>
+      </div>
+    </div>
+    <div class="contact-action-group" aria-label="Contact actions">
+      {% if object.has_converted_prospect %}
+        <a class="btn contact-btn contact-btn-primary" href="{% url 'core:prospect-detail' object.prospect.pk %}">Open Prospect</a>
+      {% else %}
+        <a class="btn contact-btn contact-btn-primary" href="{% url 'core:contact-convert-to-prospect' object.pk %}">Convert to Prospect</a>
+      {% endif %}
+      <a class="btn contact-btn contact-btn-secondary" href="{% url update_url_name object.pk %}">Edit</a>
+      <a class="btn contact-btn contact-btn-neutral" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
+      {% if can_delete %}
+        <a class="btn contact-btn contact-btn-danger" href="{% url delete_url_name object.pk %}">Delete</a>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="contact-layout">
+    <main class="contact-main-col">
+      <section class="contact-card">
+        <h2 class="contact-card-title">Quick Summary</h2>
+        <div class="contact-summary-grid">
+          <div class="contact-summary-item">
+            <p class="contact-label">Name</p>
+            <p class="contact-value">{{ object }}</p>
+          </div>
+          <div class="contact-summary-item">
+            <p class="contact-label">Email</p>
+            <p class="contact-value">{{ object.email|default:"-" }}</p>
+          </div>
+          <div class="contact-summary-item">
+            <p class="contact-label">Phone</p>
+            <p class="contact-value">{{ object.phone_number|default:"-" }}</p>
+          </div>
+          <div class="contact-summary-item">
+            <p class="contact-label">Prospect Status</p>
+            <p class="contact-value">{% if object.has_converted_prospect %}Converted{% else %}Not Converted{% endif %}</p>
+          </div>
+          <div class="contact-summary-item">
+            <p class="contact-label">Created</p>
+            <p class="contact-value">{{ object.created_at|date:"M d, Y H:i" }}</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="contact-card">
+        <h2 class="contact-card-title">Contact Information</h2>
+        <dl class="contact-kv-list">
+          <div><dt>First Name</dt><dd>{{ object.first_name|default:"-" }}</dd></div>
+          <div><dt>Last Name</dt><dd>{{ object.last_name|default:"-" }}</dd></div>
+          <div><dt>Email Address</dt><dd>{{ object.email|default:"-" }}</dd></div>
+          <div><dt>Phone Number</dt><dd>{{ object.phone_number|default:"-" }}</dd></div>
+        </dl>
+      </section>
+    </main>
+
+    <aside class="contact-side-col">
+      <section class="contact-card">
+        <h2 class="contact-card-title">Conversion</h2>
+        <dl class="contact-kv-list">
+          <div>
+            <dt>Converted to Prospect</dt>
+            <dd>{% if object.has_converted_prospect %}Yes{% else %}No{% endif %}</dd>
+          </div>
+          {% if object.has_converted_prospect %}
+            <div>
+              <dt>Prospect Record</dt>
+              <dd><a href="{% url 'core:prospect-detail' object.prospect.pk %}">{{ object.prospect }}</a></dd>
+            </div>
+          {% endif %}
+          <div>
+            <dt>Last Updated</dt>
+            <dd>{{ object.updated_at|date:"M d, Y H:i" }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="contact-card">
+        <h2 class="contact-card-title">Next Actions</h2>
+        <div class="d-grid gap-2">
+          <a class="btn contact-btn contact-btn-secondary" href="{% url update_url_name object.pk %}">Update Contact Details</a>
+          {% if object.has_converted_prospect %}
+            <a class="btn contact-btn contact-btn-primary" href="{% url 'core:prospect-detail' object.prospect.pk %}">Open Prospect</a>
+          {% else %}
+            <a class="btn contact-btn contact-btn-primary" href="{% url 'core:contact-convert-to-prospect' object.pk %}">Convert to Prospect</a>
+          {% endif %}
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .contact-detail-page {
+    display: grid;
+    gap: 1rem;
+  }
+  .contact-detail-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    border: 1px solid var(--crm-border);
+    border-radius: 16px;
+    padding: 1rem 1.1rem;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(20, 24, 36, 0.04);
+  }
+  .contact-title {
+    font-size: clamp(1.45rem, 2.8vw, 1.95rem);
+    line-height: 1.15;
+    margin: 0;
+    font-weight: 800;
+    color: var(--crm-text);
+  }
+  .contact-status-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.55rem;
+  }
+  .contact-chip {
+    border-radius: 999px;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+  }
+  .contact-chip-neutral { background: #f4f5f9; color: #2e3442; border-color: #e5e8f0; }
+  .contact-chip-success { background: #edf8f2; color: #1d6a42; border-color: #cdebd9; }
+  .contact-action-group {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .contact-btn {
+    min-height: 40px;
+    border-radius: 10px;
+    font-weight: 600;
+    padding: 0.45rem 0.85rem;
+  }
+  .contact-btn:focus-visible {
+    outline: 2px solid rgba(70, 40, 80, 0.35);
+    outline-offset: 2px;
+  }
+  .contact-btn-primary {
+    color: #fff;
+    background: var(--crm-primary);
+    border: 1px solid var(--crm-primary);
+  }
+  .contact-btn-primary:hover { background: var(--crm-primary-strong); border-color: var(--crm-primary-strong); color: #fff; }
+  .contact-btn-secondary { color: #fff; background: #546179; border: 1px solid #546179; }
+  .contact-btn-secondary:hover { color: #fff; background: #434e64; border-color: #434e64; }
+  .contact-btn-neutral { color: #334155; background: #fff; border: 1px solid #d7deea; }
+  .contact-btn-neutral:hover { background: #f6f8fc; color: #1f2a37; }
+  .contact-btn-danger { color: #fff; background: #c5394a; border: 1px solid #c5394a; }
+  .contact-btn-danger:hover { color: #fff; background: #a82b3a; border-color: #a82b3a; }
+  .contact-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr);
+    gap: 1rem;
+  }
+  .contact-main-col,
+  .contact-side-col {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
+  }
+  .contact-card {
+    border: 1px solid var(--crm-border);
+    border-radius: 14px;
+    background: #fff;
+    padding: 1rem;
+    box-shadow: 0 2px 6px rgba(20, 24, 36, 0.04);
+  }
+  .contact-card-title {
+    margin: 0 0 0.9rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--crm-text);
+  }
+  .contact-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+  }
+  .contact-summary-item {
+    border: 1px solid #edf0f6;
+    border-radius: 10px;
+    padding: 0.65rem 0.75rem;
+    background: #fcfdff;
+  }
+  .contact-label {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--crm-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+  }
+  .contact-value {
+    margin: 0.2rem 0 0;
+    font-size: 0.98rem;
+    color: var(--crm-text);
+    font-weight: 600;
+  }
+  .contact-kv-list {
+    margin: 0;
+    display: grid;
+    gap: 0.65rem;
+  }
+  .contact-kv-list div {
+    display: grid;
+    grid-template-columns: minmax(140px, 0.9fr) minmax(0, 2fr);
+    gap: 0.75rem;
+    border-bottom: 1px solid #f0f2f7;
+    padding-bottom: 0.55rem;
+  }
+  .contact-kv-list div:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+  .contact-kv-list dt {
+    margin: 0;
+    color: var(--crm-muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .contact-kv-list dd {
+    margin: 0;
+    color: var(--crm-text);
+    font-size: 0.94rem;
+    font-weight: 600;
+  }
+  @media (max-width: 991.98px) {
+    .contact-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .contact-summary-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .contact-kv-list div {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.35rem;
+    }
+  }
+</style>
+{% endblock %}

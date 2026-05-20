@@ -5,7 +5,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
-from django.db.models import Q
+from django.db.models import Q, Sum, Value
+from django.db.models.functions import Coalesce
 from django.utils.text import slugify
 from django.utils import timezone
 
@@ -910,6 +911,11 @@ class Enrollment(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="enrollments",
     )
+    course = models.ForeignKey(
+        Course,
+        on_delete=models.PROTECT,
+        related_name="enrollments",
+    )
     session = models.ForeignKey(
         CourseSession,
         on_delete=models.PROTECT,
@@ -926,6 +932,9 @@ class Enrollment(TimeStampedModel):
         decimal_places=2,
         validators=[MinValueValidator(Decimal("0.00"))],
         default=Decimal("0.00"),
+    )
+    number_of_children_under_18 = models.PositiveIntegerField(
+        default=0,
     )
     discount_amount = models.DecimalField(
         max_digits=10,
@@ -961,10 +970,16 @@ class Enrollment(TimeStampedModel):
     def clean(self) -> None:
         if self.discount_amount and self.fee_amount and self.discount_amount > self.fee_amount:
             raise ValidationError("discount_amount cannot exceed fee_amount.")
+        if self.course_id and self.session_id and self.session.course_id != self.course_id:
+            raise ValidationError("Selected session does not belong to the selected course.")
 
     def save(self, *args, **kwargs):
         if self.discount_amount and self.fee_amount and self.discount_amount > self.fee_amount:
             raise ValidationError("discount_amount cannot exceed fee_amount.")
+        if self.session_id and not self.course_id:
+            self.course_id = self.session.course_id
+        if self.course_id and self.session_id and self.session.course_id != self.course_id:
+            raise ValidationError("Selected session does not belong to the selected course.")
         self.balance_due = (self.fee_amount or Decimal("0.00")) - (
             self.discount_amount or Decimal("0.00")
         )
@@ -1188,6 +1203,32 @@ class Invoice(TimeStampedModel):
     def student(self):
         """Convenience accessor for invoice ownership through enrollment."""
         return self.enrollment.student
+
+    @property
+    def total_paid(self) -> Decimal:
+        return (
+            self.payments.aggregate(
+                total=Coalesce(
+                    Sum("amount_paid"),
+                    Value(Decimal("0.00")),
+                    output_field=models.DecimalField(max_digits=12, decimal_places=2),
+                )
+            )["total"]
+            or Decimal("0.00")
+        )
+
+    @property
+    def balance_due(self) -> Decimal:
+        remaining = (self.total_amount or Decimal("0.00")) - self.total_paid
+        return remaining if remaining > Decimal("0.00") else Decimal("0.00")
+
+    @property
+    def payment_status(self) -> str:
+        if self.balance_due <= Decimal("0.00"):
+            return "Paid"
+        if self.total_paid > Decimal("0.00"):
+            return "Partial"
+        return "Unpaid"
 
 
 class Payment(TimeStampedModel):

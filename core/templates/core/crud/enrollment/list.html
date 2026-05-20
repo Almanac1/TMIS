@@ -64,7 +64,6 @@
             <th>ID</th>
             <th>Student</th>
             <th>Course</th>
-            <th>Governor</th>
             <th>Session</th>
             <th>Status</th>
             <th>Actions</th>
@@ -76,7 +75,6 @@
             <td class="enroll-id">{{ obj.pk }}</td>
             <td class="enroll-student">{{ obj.student.prospect|default:obj.student }}</td>
             <td class="enroll-course">{{ obj.course.name|default:"-" }}</td>
-            <td class="enroll-session">{{ obj.teacher|default:"-" }}</td>
             <td class="enroll-session">{{ obj.session.start_date|date:"Y-m-d" }}</td>
             <td>
               <span class="enroll-chip">
@@ -93,7 +91,7 @@
           </tr>
           {% empty %}
           <tr>
-            <td colspan="7" class="empty-state">
+            <td colspan="6" class="empty-state">
               <strong>
                 {% if search_query %}
                   No enrollments found for this search.

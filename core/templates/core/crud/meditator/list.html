@@ -15,15 +15,102 @@
     </div>
   </div>
 
-  {% include "core/crud/partials/list_search_card.html" %}
+  <div class="search-card card shadow-sm mb-3">
+    <div class="card-body py-3 px-3 px-md-4">
+      <form method="get">
+        <label for="list-search-input" class="search-label form-label mb-2">{{ search_label|default:"Search" }}</label>
+        <div class="search-row d-grid" style="grid-template-columns:minmax(0,1fr) auto auto;gap:.55rem;align-items:center;">
+          <input
+            id="list-search-input"
+            type="text"
+            name="q"
+            class="form-control search-input"
+            value="{{ search_query }}"
+            placeholder="{{ search_placeholder|default:'Search records' }}"
+          >
+          <button type="submit" class="btn btn-primary search-btn">Search</button>
+          <a class="clear-link" href="{{ search_clear_url|default:request.path }}">Clear filters</a>
+        </div>
 
+        <div class="mt-3 d-flex align-items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            data-bs-toggle="collapse"
+            data-bs-target="#meditator-advanced-filters"
+            aria-expanded="{% if meditator_filter_values.status or meditator_filter_values.assigned_user or meditator_filter_values.activity or meditator_filter_values.course or meditator_filter_values.created_from or meditator_filter_values.created_to %}true{% else %}false{% endif %}"
+            aria-controls="meditator-advanced-filters"
+          >
+            Advanced Filters
+          </button>
+          {% if meditator_filter_values.status or meditator_filter_values.assigned_user or meditator_filter_values.activity or meditator_filter_values.course or meditator_filter_values.created_from or meditator_filter_values.created_to %}
+            <span class="badge text-bg-warning">Filters active</span>
+          {% endif %}
+        </div>
+        <div class="collapse mt-3{% if meditator_filter_values.status or meditator_filter_values.assigned_user or meditator_filter_values.activity or meditator_filter_values.course or meditator_filter_values.created_from or meditator_filter_values.created_to %} show{% endif %}" id="meditator-advanced-filters">
+          <div class="row g-2">
+            <div class="col-md-6 col-lg-4">
+              <label for="meditator-filter-status" class="form-label mb-1">Status</label>
+              <select id="meditator-filter-status" class="form-select" name="status">
+                <option value="">All statuses</option>
+                {% for value, label in meditator_status_choices %}
+                  <option value="{{ value }}"{% if meditator_filter_values.status == value %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6 col-lg-4">
+              <label for="meditator-filter-assigned-user" class="form-label mb-1">Assigned User</label>
+              <select id="meditator-filter-assigned-user" class="form-select" name="assigned_user">
+                <option value="">All assigned users</option>
+                {% for user in meditator_owner_choices %}
+                  <option value="{{ user.pk }}"{% if meditator_filter_values.assigned_user == user.pk|stringformat:"s" %} selected{% endif %}>
+                    {% if user.get_full_name %}{{ user.get_full_name }}{% else %}{{ user.username }}{% endif %}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6 col-lg-4">
+              <label for="meditator-filter-activity" class="form-label mb-1">Active / Inactive</label>
+              <select id="meditator-filter-activity" class="form-select" name="activity">
+                <option value="">All</option>
+                <option value="active"{% if meditator_filter_values.activity == "active" %} selected{% endif %}>Active</option>
+                <option value="inactive"{% if meditator_filter_values.activity == "inactive" %} selected{% endif %}>Inactive</option>
+              </select>
+            </div>
+            <div class="col-md-6 col-lg-4">
+              <label for="meditator-filter-course" class="form-label mb-1">Course Enrolled</label>
+              <select id="meditator-filter-course" class="form-select" name="course">
+                <option value="">All courses</option>
+                {% for course in meditator_course_choices %}
+                  <option value="{{ course.pk }}"{% if meditator_filter_values.course == course.pk|stringformat:"s" %} selected{% endif %}>{{ course.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6 col-lg-4">
+              <label for="meditator-filter-created-from" class="form-label mb-1">Created From</label>
+              <input id="meditator-filter-created-from" type="date" class="form-control" name="created_from" value="{{ meditator_filter_values.created_from }}">
+            </div>
+            <div class="col-md-6 col-lg-4">
+              <label for="meditator-filter-created-to" class="form-label mb-1">Created To</label>
+              <input id="meditator-filter-created-to" type="date" class="form-control" name="created_to" value="{{ meditator_filter_values.created_to }}">
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="meditator-bulk-scope" data-recipient-kind="meditator" data-communication-create-url="{% url 'core:communication-create' %}" data-bulk-send-url="{% url 'core:communication-bulk-send' %}" data-total-matches="{% if is_paginated %}{{ page_obj.paginator.count }}{% else %}{{ meditators|length }}{% endif %}">
+  <div class="small text-muted mb-2">{% if is_paginated %}{{ page_obj.paginator.count }}{% else %}{{ meditators|length }}{% endif %} meditators match this filter.</div>
+  {% include "core/crud/partials/bulk_email_ui.html" with prefix="meditator" entity_label="meditators" %}
   <div class="table-card">
     <div class="table-responsive">
       <table class="table table-striped table-hover mb-0 align-middle">
-        <thead class="table-light"><tr><th>Student</th><th>Status</th><th>Governor</th><th>Intro Completed</th><th>Day 20 Completed</th><th>Transitioned At</th><th>Actions</th></tr></thead>
+        <thead class="table-light"><tr><th class="text-center" style="width:38px;"><input type="checkbox" class="form-check-input" data-bulk-select-all aria-label="Select displayed meditators" title="Select displayed results"></th><th>Student</th><th>Status</th><th>Governor</th><th>Intro Completed</th><th>Day 20 Completed</th><th>Transitioned At</th><th>Actions</th></tr></thead>
         <tbody>
           {% for meditator in meditators %}
           <tr>
+            <td class="text-center"><input type="checkbox" class="form-check-input" data-bulk-row-select value="{{ meditator.id }}" aria-label="Select meditator {{ meditator.student.prospect }}"></td>
             <td class="contact-id">{{ meditator.student.prospect }}</td>
             <td>{{ meditator.student.get_enrollment_status_display|default:"-" }}</td>
             <td>{{ meditator.student.teacher|default:"Unassigned" }}</td>
@@ -33,13 +120,32 @@
             <td><a class="btn btn-sm btn-outline-primary" href="{% url 'core:student-detail' meditator.student.pk %}">Open Student</a></td>
           </tr>
           {% empty %}
-          <tr><td colspan="7" class="empty-state"><strong>{% if search_query %}No meditators found for this search.{% else %}No meditators found for your current visibility scope.{% endif %}</strong></td></tr>
+          <tr><td colspan="8" class="empty-state"><strong>{% if search_query %}No meditators found for this search.{% else %}No meditators found for your current visibility scope.{% endif %}</strong></td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
+  </div>
 
   {% if is_paginated %}<nav class="mt-3" aria-label="Meditator pagination"><ul class="pagination justify-content-end">{% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a></li>{% else %}<li class="page-item disabled"><span class="page-link">Previous</span></li>{% endif %}<li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>{% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a></li>{% else %}<li class="page-item disabled"><span class="page-link">Next</span></li>{% endif %}</ul></nav>{% endif %}
 </div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .bulk-email-toolbar {
+    top: 0.4rem;
+    z-index: 5;
+    background: #fff;
+    border: 1px solid var(--crm-border);
+    border-radius: 10px;
+    padding: 0.55rem 0.7rem;
+    box-shadow: 0 2px 8px rgba(20, 24, 36, 0.06);
+  }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+{% include "core/crud/partials/bulk_email_ui_script.html" with prefix="meditator" entity_label="meditators" %}
 {% endblock %}

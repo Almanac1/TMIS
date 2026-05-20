@@ -1,0 +1,215 @@
+<script>
+  (function () {
+    const prefix = "{{ prefix }}";
+    const scope = document.getElementById(prefix + "-bulk-scope");
+    if (!scope) return;
+
+    const toolbar = document.getElementById(prefix + "-bulk-toolbar");
+    const selectedCountEl = document.getElementById(prefix + "-selected-count");
+    const sendEmailBtn = document.getElementById(prefix + "-send-email");
+    const clearButton = document.getElementById(prefix + "-clear-selection");
+    const selectDisplayed = scope.querySelector("[data-bulk-select-all]");
+    const tableBody = scope.querySelector("tbody");
+    const rowChecks = tableBody ? Array.from(tableBody.querySelectorAll("[data-bulk-row-select]")) : [];
+    const selectAllPrompt = document.getElementById(prefix + "-select-all-prompt");
+    const selectAllPromptText = document.getElementById(prefix + "-select-all-prompt-text");
+    const selectAllFilteredBtn = document.getElementById(prefix + "-select-all-filtered");
+    const allFilteredSelectedEl = document.getElementById(prefix + "-all-filtered-selected");
+    const modalEl = document.getElementById(prefix + "-bulk-message-modal");
+    const modalRecipientCountEl = document.getElementById(prefix + "-modal-recipient-count");
+    const modalSendBtn = document.getElementById(prefix + "-modal-send-message");
+    const modalSubjectEl = document.getElementById(prefix + "-bulk-message-subject");
+    const modalBodyEl = document.getElementById(prefix + "-bulk-message-body");
+    const toastEl = document.getElementById(prefix + "-bulk-message-toast");
+    const toastBodyEl = document.getElementById(prefix + "-bulk-message-toast-body");
+    const filterForm = document.querySelector(".search-card form");
+    const entityLabel = "{{ entity_label }}";
+    const recipientKind = (scope.getAttribute("data-recipient-kind") || "").trim();
+    const bulkSendUrl = scope.getAttribute("data-bulk-send-url") || "";
+    const totalMatches = Number(scope.getAttribute("data-total-matches") || rowChecks.length);
+    let allFilteredSelected = false;
+
+    function getBootstrapApi() {
+      if (window.bootstrap) return window.bootstrap;
+      if (typeof bootstrap !== "undefined") return bootstrap;
+      return null;
+    }
+
+    function getModalInstance() {
+      const bootstrapApi = getBootstrapApi();
+      if (!bootstrapApi || !modalEl) return null;
+      return bootstrapApi.Modal.getOrCreateInstance(modalEl);
+    }
+
+    function getToastInstance() {
+      const bootstrapApi = getBootstrapApi();
+      if (!bootstrapApi || !toastEl) return null;
+      return bootstrapApi.Toast.getOrCreateInstance(toastEl, { delay: 3000 });
+    }
+
+    function getSelectedRows() {
+      return rowChecks.filter((cb) => cb.checked);
+    }
+
+    function getCookie(name) {
+      const cookieValue = document.cookie
+        .split(";")
+        .map((part) => part.trim())
+        .find((part) => part.startsWith(name + "="));
+      if (!cookieValue) return "";
+      return decodeURIComponent(cookieValue.split("=").slice(1).join("="));
+    }
+
+    function resetSelection() {
+      allFilteredSelected = false;
+      rowChecks.forEach((cb) => {
+        cb.checked = false;
+      });
+      if (selectDisplayed) {
+        selectDisplayed.checked = false;
+        selectDisplayed.indeterminate = false;
+      }
+      syncToolbar();
+    }
+
+    function syncToolbar() {
+      const selected = getSelectedRows();
+      const count = selected.length;
+      toolbar.classList.toggle("d-none", count === 0);
+      selectedCountEl.textContent = allFilteredSelected
+        ? totalMatches + " " + entityLabel + " selected"
+        : count + " " + entityLabel + " selected";
+      if (sendEmailBtn) {
+        sendEmailBtn.disabled = count === 0 && !allFilteredSelected;
+      }
+      if (selectDisplayed) {
+        selectDisplayed.checked = count > 0 && count === rowChecks.length;
+        selectDisplayed.indeterminate = count > 0 && count < rowChecks.length;
+      }
+
+      if (selectAllPrompt && selectAllPromptText && selectAllFilteredBtn) {
+        const canOfferAllFiltered = !allFilteredSelected && count > 0 && count === rowChecks.length && totalMatches > rowChecks.length;
+        selectAllPrompt.classList.toggle("d-none", !canOfferAllFiltered);
+        if (canOfferAllFiltered) {
+          selectAllPromptText.textContent = rowChecks.length + " records on this page selected.";
+          selectAllFilteredBtn.textContent = "Select all " + totalMatches + " matching this filter?";
+        }
+      }
+      if (allFilteredSelectedEl) {
+        allFilteredSelectedEl.classList.toggle("d-none", !allFilteredSelected);
+        if (allFilteredSelected) {
+          allFilteredSelectedEl.textContent = "All " + totalMatches + " matching " + entityLabel + " are selected.";
+        }
+      }
+    }
+
+    if (selectDisplayed) {
+      selectDisplayed.addEventListener("change", function () {
+        rowChecks.forEach((cb) => {
+          cb.checked = selectDisplayed.checked;
+        });
+        syncToolbar();
+      });
+    }
+
+    rowChecks.forEach((cb) => {
+      cb.addEventListener("change", syncToolbar);
+    });
+
+    if (clearButton) {
+      clearButton.addEventListener("click", resetSelection);
+    }
+
+    if (sendEmailBtn) {
+      sendEmailBtn.addEventListener("click", function () {
+        const selectedCount = allFilteredSelected ? totalMatches : getSelectedRows().length;
+        if (!selectedCount || !modalRecipientCountEl) return;
+        modalRecipientCountEl.textContent = selectedCount + " " + entityLabel + " selected";
+        const modalInstance = getModalInstance();
+        if (!modalInstance) return;
+        modalInstance.show();
+        if (modalSubjectEl) {
+          setTimeout(function () {
+            modalSubjectEl.focus();
+          }, 100);
+        }
+      });
+    }
+
+    if (selectAllFilteredBtn) {
+      selectAllFilteredBtn.addEventListener("click", function () {
+        allFilteredSelected = true;
+        syncToolbar();
+      });
+    }
+
+    if (modalSendBtn) {
+      modalSendBtn.addEventListener("click", async function (event) {
+        event.preventDefault();
+        const selectedCount = allFilteredSelected ? totalMatches : getSelectedRows().length;
+        if (!selectedCount || !bulkSendUrl || !recipientKind) return;
+
+        const sourceParams = new URLSearchParams(window.location.search);
+        sourceParams.delete("page");
+        const selectedIds = getSelectedRows()
+          .map((cb) => (cb.value || "").trim())
+          .filter((id) => /^[0-9]+$/.test(id));
+        const payload = {
+          recipient_kind: recipientKind,
+          bulk_mode: allFilteredSelected ? "filtered" : "selected",
+          selected_ids: selectedIds,
+          source_query: sourceParams.toString(),
+          subject: modalSubjectEl ? modalSubjectEl.value : "",
+          body: modalBodyEl ? modalBodyEl.value : "",
+        };
+
+        modalSendBtn.disabled = true;
+        let messageText = "Message ready to send to " + selectedCount + " selected recipients.";
+        try {
+          const response = await fetch(bulkSendUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": getCookie("csrftoken"),
+            },
+            body: JSON.stringify(payload),
+            credentials: "same-origin",
+          });
+          const result = await response.json();
+          if (!response.ok || !result.ok) {
+            messageText = (result && result.error) ? result.error : "Message send failed.";
+          } else {
+            messageText = "Message sent to " + result.sent_count + " recipient(s).";
+            if (result.failed_count) {
+              messageText += " " + result.failed_count + " failed.";
+            }
+          }
+        } catch (error) {
+          messageText = "Message send failed. Please try again.";
+        } finally {
+          modalSendBtn.disabled = false;
+        }
+
+        if (toastBodyEl) {
+          toastBodyEl.textContent = messageText;
+        }
+        const modalInstance = getModalInstance();
+        if (modalInstance) {
+          modalInstance.hide();
+        }
+        const toastInstance = getToastInstance();
+        if (toastInstance) {
+          toastInstance.show();
+        }
+        if (modalSubjectEl) modalSubjectEl.value = "";
+        if (modalBodyEl) modalBodyEl.value = "";
+      });
+    }
+
+    if (filterForm) {
+      filterForm.addEventListener("submit", resetSelection);
+    }
+
+    syncToolbar();
+  })();
+</script>

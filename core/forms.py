@@ -123,7 +123,6 @@ class EnrollmentForm(forms.ModelForm):
     new_source = forms.CharField(required=False, max_length=100)
     new_notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
     course = forms.ModelChoiceField(queryset=Course.objects.none(), required=False)
-    session_governor = forms.CharField(required=False, disabled=True)
 
     enrollment_date = forms.DateField(
         widget=forms.DateInput(attrs={"type": "date"}),
@@ -165,6 +164,14 @@ class EnrollmentForm(forms.ModelForm):
     def _as_money(value):
         value = value if value is not None else Decimal("0.00")
         return Decimal(value).quantize(Decimal("0.01"))
+
+    @staticmethod
+    def _is_tm_family_course(course):
+        if not course:
+            return False
+        code = (getattr(course, "code", "") or "").strip().upper().replace("-", "")
+        name = (getattr(course, "name", "") or "").strip().lower()
+        return code in {"TMF", "TMFM"} or "family" in name
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -225,9 +232,8 @@ class EnrollmentForm(forms.ModelForm):
                     "",
                     Row(
                         Column("course", css_class="col-12 col-lg-6"),
-                        Column("session", css_class="col-12 col-lg-6"),
                     ),
-                    Row(Column("session_governor", css_class="col-12 col-lg-6")),
+                    Field("session", type="hidden"),
                     HTML('<div id="course-preview" class="enroll-course-preview mt-2"></div>'),
                 ),
                 css_class="card shadow-sm rounded-4 border-0 p-4 mb-4 enroll-step-card",
@@ -300,11 +306,6 @@ class EnrollmentForm(forms.ModelForm):
         if selected_course is not None:
             session_qs = session_qs.filter(course=selected_course)
         self.fields["session"].queryset = session_qs
-        self.fields["session_governor"].label = "Governor"
-        self.fields["session_governor"].widget.attrs["readonly"] = "readonly"
-        self.fields["session_governor"].widget.attrs["class"] = "form-control bg-light"
-        self.fields["session_governor"].help_text = "Auto-filled from selected session."
-
         if self.instance and self.instance.pk and self.instance.enrollment_date:
             self.initial["enrollment_date"] = timezone.localtime(
                 self.instance.enrollment_date
@@ -316,14 +317,6 @@ class EnrollmentForm(forms.ModelForm):
         )
         self.initial["discount_amount"] = self._as_money(discount)
         self.initial["balance_due"] = self._as_money(fee) - self._as_money(discount)
-        if self.instance and self.instance.pk and self.instance.session_id:
-            self.initial["session_governor"] = str(self.instance.session.teacher)
-        else:
-            selected_session_id = (self.data.get("session") or "").strip() if self.is_bound else ""
-            if selected_session_id.isdigit():
-                selected_session = session_qs.filter(pk=int(selected_session_id)).first()
-                if selected_session:
-                    self.initial["session_governor"] = str(selected_session.teacher)
         if self.instance and self.instance.pk and self.instance.session_id:
             self.initial["number_of_children_under_18"] = 0
             self.fields["student"].initial = self.instance.student_id
@@ -364,10 +357,8 @@ class EnrollmentForm(forms.ModelForm):
             self.add_error("session", "No session is available for the selected course.")
         if selected_course and session and session.course_id != selected_course.pk:
             self.add_error("session", "Selected session does not belong to the selected course.")
-        if session:
-            cleaned["session_governor"] = str(session.teacher)
 
-        is_tm_family = bool(selected_course and selected_course.name.strip().lower() == "tm - family")
+        is_tm_family = self._is_tm_family_course(selected_course)
         if is_tm_family:
             if children_count < 0:
                 self.add_error("number_of_children_under_18", "Children count cannot be negative.")
@@ -864,15 +855,20 @@ class ProspectForm(forms.ModelForm):
         self.fields["governor_assigned"].queryset = get_user_model().objects.order_by("username")
         self.fields["course_interest"].queryset = Course.objects.filter(status="active").order_by("name")
         self.fields["course_interest"].label = "Course interest"
+        self.fields["course_interest"].help_text = "Select the program this prospect is most likely interested in."
         self.fields["course_interest"].label_from_instance = (
             lambda obj: f"{obj.name} ({getattr(obj, 'code', '-')})"
         )
+        self.fields["notes"].widget.attrs.update({"rows": 4})
         self.helper = FormHelper()
         self.helper.form_method = "post"
         self.helper.layout = Layout(
-            Fieldset(
-                "Contact source",
-                "prospect_is_existing_contact",
+            Div(
+                HTML('<h2 class="prospect-section-title">Contact source</h2>'),
+                Div(
+                    Field("prospect_is_existing_contact"),
+                    css_class="prospect-toggle-row",
+                ),
                 Div(
                     Field("selected_contact", css_class="d-none"),
                     HTML(
@@ -887,35 +883,52 @@ class ProspectForm(forms.ModelForm):
                     css_id="existing-contact-wrap",
                     css_class="d-none",
                 ),
+                css_class="prospect-section-card",
             ),
-            Fieldset(
-                "Contact details",
+            Div(
+                HTML('<h2 class="prospect-section-title">Contact details</h2>'),
                 Div(
                     Row(
-                        Column("first_name", css_class="col-md-6"),
-                        Column("last_name", css_class="col-md-6"),
-                        Column("email", css_class="col-md-6"),
-                        Column("phone_number", css_class="col-md-6"),
+                        Column("first_name", css_class="col-12 col-lg-6"),
+                        Column("last_name", css_class="col-12 col-lg-6"),
+                        Column("email", css_class="col-12 col-lg-6"),
+                        Column("phone_number", css_class="col-12 col-lg-6"),
                     ),
                     css_id="new-contact-wrap",
                 ),
+                css_class="prospect-section-card",
             ),
-            Fieldset(
-                "Prospect details",
+            Div(
+                HTML('<h2 class="prospect-section-title">Prospect details</h2>'),
                 Row(
-                    Column("preferred_contact_method", css_class="col-md-6"),
-                    Column("status", css_class="col-md-6"),
-                    Column("course_interest", css_class="col-md-6"),
-                    Column("interest_level", css_class="col-md-6"),
-                    Column("source", css_class="col-md-6"),
-                    Column("notes", css_class="col-12"),
+                    Column("preferred_contact_method", css_class="col-12 col-lg-6"),
+                    Column("status", css_class="col-12 col-lg-6"),
                 ),
+                Row(
+                    Column("course_interest", css_class="col-12 col-lg-6"),
+                    Column("interest_level", css_class="col-12 col-lg-6"),
+                ),
+                Row(
+                    Column("source", css_class="col-12 col-lg-6"),
+                    Column("governor_assigned", css_class="col-12 col-lg-6"),
+                ),
+                css_class="prospect-section-card",
             ),
-            Fieldset(
-                "Assignment",
-                Row(Column("governor_assigned", css_class="col-md-6")),
+            Div(
+                HTML('<h2 class="prospect-section-title">Assignment</h2>'),
+                HTML('<p class="text-muted small mb-0">Prospect ownership is assigned through <strong>Governor assigned</strong> above.</p>'),
+                css_class="prospect-section-card",
             ),
-            Submit("submit", "Save Prospect", css_class="btn btn-primary"),
+            Div(
+                HTML('<h2 class="prospect-section-title">Notes</h2>'),
+                Row(Column("notes", css_class="col-12")),
+                css_class="prospect-section-card",
+            ),
+            Div(
+                Submit("submit", "Create Prospect", css_class="btn btn-primary"),
+                HTML('<a class="btn btn-outline-secondary" href="../">Cancel</a>'),
+                css_class="prospect-action-bar d-flex gap-2 justify-content-end",
+            ),
         )
         if self.instance and self.instance.contact_id:
             self.initial["prospect_is_existing_contact"] = True
@@ -1031,9 +1044,206 @@ class StudentForm(forms.ModelForm):
         model = Student
         fields = "__all__"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "date_of_birth" in self.fields:
+            self.fields["date_of_birth"].widget = forms.DateInput(attrs={"type": "date"})
+        self.helper = FormHelper()
+        self.helper.form_method = "post"
+        self.helper.layout = Layout(
+            *list(self.fields.keys()),
+            Div(
+                Submit("submit", "Save", css_class="btn btn-primary"),
+                HTML('<a class="btn btn-outline-secondary" href="../">Cancel</a>'),
+                css_class="d-flex gap-2 justify-content-end mt-3",
+            ),
+        )
+
     def clean(self):
         cleaned = super().clean()
         prospect = cleaned.get("prospect")
         if prospect and not prospect.contact_id:
             self.add_error("prospect", "Selected prospect must have a linked contact.")
         return cleaned
+
+
+class StudentCreateForm(forms.ModelForm):
+    PERSON_TYPE_CHOICES = (
+        ("student", "Existing Student"),
+        ("prospect", "Existing Prospect"),
+        ("contact", "Existing Contact"),
+        ("new_prospect", "New Prospect"),
+    )
+
+    person_type = forms.ChoiceField(choices=PERSON_TYPE_CHOICES, initial="prospect")
+    student = forms.ModelChoiceField(queryset=Student.objects.none(), required=False)
+    prospect = forms.ModelChoiceField(queryset=Prospect.objects.none(), required=False)
+    contact = forms.ModelChoiceField(queryset=Contact.objects.none(), required=False)
+    new_first_name = forms.CharField(required=False, max_length=100)
+    new_last_name = forms.CharField(required=False, max_length=100)
+    new_email = forms.EmailField(required=False)
+    new_phone_number = forms.CharField(required=False, max_length=30)
+    new_source = forms.CharField(required=False, max_length=100)
+    new_notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
+
+    class Meta:
+        model = Student
+        fields = (
+            "teacher",
+            "date_of_birth",
+            "address",
+            "city",
+            "province_state",
+            "country",
+            "enrollment_status",
+            "notes",
+            "owner",
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "date_of_birth" in self.fields:
+            self.fields["date_of_birth"].widget = forms.DateInput(attrs={"type": "date"})
+        self.fields["student"].queryset = Student.objects.select_related("prospect__contact").order_by(
+            "prospect__contact__first_name",
+            "prospect__contact__last_name",
+        )
+        self.fields["prospect"].queryset = Prospect.objects.select_related("contact").order_by(
+            "contact__first_name",
+            "contact__last_name",
+        )
+        self.fields["contact"].queryset = Contact.objects.order_by("first_name", "last_name")
+
+        self.helper = FormHelper()
+        self.helper.form_method = "post"
+        self.helper.form_id = "student-create-form"
+        self.helper.layout = Layout(
+            Div(
+                HTML('<div class="enroll-step-kicker">Step 1</div><h2 class="enroll-step-title">Select person type</h2>'),
+                Row(Column("person_type", css_class="col-12 col-xl-6")),
+                HTML(
+                    """
+                    <div id="search-step-wrap" class="mb-3">
+                      <label for="entity-search-input" class="form-label">Search and select person</label>
+                      <div class="input-group input-group-lg">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" id="entity-search-input" class="form-control" placeholder="Type at least 2 characters">
+                      </div>
+                      <div class="form-text">Search by first name, last name, email, or phone.</div>
+                      <div id="entity-search-results" class="list-group mt-2"></div>
+                      <div id="selected-person" class="alert alert-light border mt-2 d-none mb-0"></div>
+                    </div>
+                    """
+                ),
+                Div(
+                    Row(
+                        Column("new_first_name", css_class="col-12 col-lg-6"),
+                        Column("new_last_name", css_class="col-12 col-lg-6"),
+                        Column("new_email", css_class="col-12 col-lg-6"),
+                        Column("new_phone_number", css_class="col-12 col-lg-6"),
+                        Column("new_source", css_class="col-12"),
+                        Column("new_notes", css_class="col-12"),
+                    ),
+                    css_id="new-prospect-wrap",
+                    css_class="d-none",
+                ),
+                Field("student", type="hidden"),
+                Field("prospect", type="hidden"),
+                Field("contact", type="hidden"),
+                css_class="card shadow-sm rounded-4 border-0 p-4 mb-4 enroll-step-card",
+            ),
+            Div(
+                HTML('<div class="enroll-step-kicker">Student details</div><h2 class="enroll-step-title">Profile & Assignment</h2>'),
+                Row(
+                    Column("teacher", css_class="col-12 col-lg-6"),
+                    Column("enrollment_status", css_class="col-12 col-lg-6"),
+                    Column("date_of_birth", css_class="col-12 col-lg-6"),
+                    Column("city", css_class="col-12 col-lg-6"),
+                    Column("province_state", css_class="col-12 col-lg-6"),
+                    Column("country", css_class="col-12 col-lg-6"),
+                    Column("address", css_class="col-12"),
+                    Column("notes", css_class="col-12"),
+                ),
+                css_class="card shadow-sm rounded-4 border-0 p-4 mb-4 enroll-step-card",
+            ),
+            Div(
+                Submit("submit", "Create Student", css_class="btn btn-primary px-4"),
+                HTML('<a class="btn btn-outline-secondary" href="../">Cancel</a>'),
+                css_class="sticky-action-bar d-flex flex-wrap gap-2 justify-content-end",
+            ),
+        )
+
+    def clean(self):
+        cleaned = super().clean()
+        person_type = cleaned.get("person_type")
+        selected_student = cleaned.get("student")
+        selected_prospect = cleaned.get("prospect")
+        selected_contact = cleaned.get("contact")
+
+        if person_type == "student":
+            if not selected_student:
+                self.add_error("student", "Select an existing student.")
+            else:
+                self.add_error("student", f"Student #{selected_student.pk} already exists. Open the existing record instead.")
+            return cleaned
+
+        if person_type == "prospect" and not selected_prospect:
+            self.add_error("prospect", "Select an existing prospect.")
+        if person_type == "contact" and not selected_contact:
+            self.add_error("contact", "Select an existing contact.")
+        if person_type == "new_prospect":
+            first_name = (cleaned.get("new_first_name") or "").strip()
+            last_name = (cleaned.get("new_last_name") or "").strip()
+            if not first_name or not last_name:
+                raise forms.ValidationError("First and last name are required for new prospects.")
+
+        return cleaned
+
+    def save(self, commit=True):
+        person_type = self.cleaned_data.get("person_type")
+
+        if person_type == "prospect":
+            prospect = self.cleaned_data.get("prospect")
+            student, _ = prospect.convert_to_student()
+        elif person_type == "contact":
+            contact = self.cleaned_data.get("contact")
+            prospect, _ = contact.convert_to_prospect(
+                owner=self.cleaned_data.get("owner"),
+                source="Student Creation",
+                notes=self.cleaned_data.get("new_notes") or "",
+            )
+            student, _ = prospect.convert_to_student()
+        elif person_type == "new_prospect":
+            contact, _ = Contact.get_or_create_from_identity(
+                first_name=(self.cleaned_data.get("new_first_name") or "").strip(),
+                last_name=(self.cleaned_data.get("new_last_name") or "").strip(),
+                email=(self.cleaned_data.get("new_email") or "").strip(),
+                phone_number=(self.cleaned_data.get("new_phone_number") or "").strip(),
+            )
+            prospect, _ = contact.convert_to_prospect(
+                owner=self.cleaned_data.get("owner"),
+                source=(self.cleaned_data.get("new_source") or "").strip(),
+                notes=(self.cleaned_data.get("new_notes") or "").strip(),
+            )
+            student, _ = prospect.convert_to_student()
+        else:
+            raise forms.ValidationError("Select a valid person type.")
+
+        for field in (
+            "teacher",
+            "date_of_birth",
+            "address",
+            "city",
+            "province_state",
+            "country",
+            "enrollment_status",
+            "notes",
+        ):
+            setattr(student, field, self.cleaned_data.get(field))
+
+        if not student.owner_id:
+            student.owner = self.cleaned_data.get("owner")
+
+        if commit:
+            student.save()
+        return student

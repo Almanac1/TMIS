@@ -6,110 +6,340 @@
 {% endblock %}
 
 {% block content %}
-<div class="crud-list-shell">
-  <div class="page-head">
+<div class="prospect-detail-page">
+  <header class="prospect-detail-header">
     <div>
-      <h1 class="page-title">{{ object }}</h1>
-      <div class="d-flex gap-2 flex-wrap mt-1">
+      <h1 class="prospect-title">{{ object }}</h1>
+      <div class="prospect-status-row" aria-label="Prospect statuses">
         {% if object.status == "bad_lead" %}
-          <span class="badge text-bg-danger">Bad Lead</span>
+          <span class="prospect-chip prospect-chip-danger">Bad Lead</span>
         {% else %}
-          <span class="badge text-bg-secondary">{{ object.get_status_display }}</span>
+          <span class="prospect-chip prospect-chip-neutral">Status: {{ object.get_status_display }}</span>
         {% endif %}
         {% if object.is_archived %}
-          <span class="badge text-bg-warning">Archived</span>
+          <span class="prospect-chip prospect-chip-warning">Archived</span>
         {% else %}
-          <span class="badge text-bg-success">Active</span>
+          <span class="prospect-chip prospect-chip-success">Active</span>
         {% endif %}
       </div>
     </div>
-    <div class="page-actions">
-      <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
-      <a class="btn btn-secondary" href="{% url update_url_name object.pk %}">Edit</a>
+    <div class="prospect-action-group" aria-label="Prospect actions">
       {% if not has_student_record %}
-        <form method="post" action="{% url 'core:prospect-convert-to-student' object.pk %}" class="d-inline">
+        <form method="post" action="{% url 'core:prospect-convert-to-student' object.pk %}" class="m-0">
           {% csrf_token %}
-          <button type="submit" class="btn btn-outline-primary">Convert to Student</button>
+          <button type="submit" class="btn prospect-btn prospect-btn-primary">Convert to Student</button>
         </form>
       {% else %}
-        <a class="btn btn-outline-success" href="{% url 'core:student-detail' object.student_record.pk %}">Open Student</a>
+        <a class="btn prospect-btn prospect-btn-primary" href="{% url 'core:student-detail' object.student_record.pk %}">Open Student</a>
       {% endif %}
+      <a class="btn prospect-btn prospect-btn-secondary" href="{% url update_url_name object.pk %}">Edit</a>
+      <a class="btn prospect-btn prospect-btn-neutral" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
       {% if can_delete %}
-        <a class="btn btn-danger" href="{% url delete_url_name object.pk %}">Delete</a>
+        <a class="btn prospect-btn prospect-btn-danger" href="{% url delete_url_name object.pk %}">Delete</a>
       {% endif %}
     </div>
-  </div>
+  </header>
 
-  <div class="row g-3">
-    <div class="col-lg-5">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h2 class="h6 text-uppercase text-muted mb-3">Contact Attempt Summary</h2>
-          <div class="display-6 fw-bold mb-1">{{ contact_attempt_count }}</div>
-          <div class="text-muted small">Total contact attempts logged for this prospect.</div>
+  <div class="prospect-layout">
+    <main class="prospect-main-col">
+      <section class="prospect-card">
+        <h2 class="prospect-card-title">Quick Summary</h2>
+        {% with last_comm=communications.0 %}
+        <div class="prospect-summary-grid">
+          <div class="prospect-summary-item">
+            <p class="prospect-label">Contact Attempts</p>
+            <p class="prospect-value">{{ contact_attempt_count }}</p>
+          </div>
+          <div class="prospect-summary-item">
+            <p class="prospect-label">Status</p>
+            <p class="prospect-value">{{ object.get_status_display|default:"-" }}</p>
+          </div>
+          <div class="prospect-summary-item">
+            <p class="prospect-label">Interest Level</p>
+            <p class="prospect-value">{{ object.get_interest_level_display|default:"-" }}</p>
+          </div>
+          <div class="prospect-summary-item">
+            <p class="prospect-label">Assigned User</p>
+            <p class="prospect-value">{{ object.owner|default:"-" }}</p>
+          </div>
+          <div class="prospect-summary-item">
+            <p class="prospect-label">Last Contacted</p>
+            <p class="prospect-value">
+              {% if last_comm %}{{ last_comm.created_at|date:"M d, Y H:i" }}{% else %}-{% endif %}
+            </p>
+          </div>
         </div>
-      </div>
+        {% endwith %}
+      </section>
 
-      <div class="card shadow-sm mt-3">
-        <div class="table-responsive">
-          <table class="table table-striped mb-0">
-            <tbody>
-              {% for label, value in primary_fields %}
-                <tr>
-                  <th style="width: 38%;">{{ label }}</th>
-                  <td>
-                    {% if label == "Last Contacted" and value %}
-                      {{ value|date:"M d, Y H:i" }}
-                    {% elif label == "Created At" and value %}
-                      {{ value|date:"M d, Y H:i" }}
-                    {% else %}
-                      {{ value|default:"-" }}
-                    {% endif %}
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+      <section class="prospect-card">
+        <h2 class="prospect-card-title">Contact Information</h2>
+        <dl class="prospect-kv-list">
+          <div><dt>Email</dt><dd>{{ object.email|default:"-" }}</dd></div>
+          <div><dt>Phone Number</dt><dd>{{ object.phone|default:"-" }}</dd></div>
+          <div><dt>Preferred Contact Method</dt><dd>{{ object.get_preferred_contact_method_display|default:"-" }}</dd></div>
+        </dl>
+      </section>
+
+      <section class="prospect-card">
+        <h2 class="prospect-card-title">Prospect Profile</h2>
+        <dl class="prospect-kv-list">
+          <div><dt>Source</dt><dd>{{ object.source|default:"-" }}</dd></div>
+          <div><dt>Interest</dt><dd>{{ object.get_interest_level_display|default:"-" }}</dd></div>
+          <div><dt>Created At</dt><dd>{{ object.created_at|date:"M d, Y H:i" }}</dd></div>
+        </dl>
+      </section>
+
+      <section class="prospect-card">
+        <h2 class="prospect-card-title">Assignment</h2>
+        <dl class="prospect-kv-list">
+          <div><dt>Assigned Governor</dt><dd>{{ object.teacher|default:"-" }}</dd></div>
+          <div><dt>Assigned User</dt><dd>{{ object.owner|default:"-" }}</dd></div>
+          <div><dt>Archived</dt><dd>{% if object.is_archived %}Yes{% else %}No{% endif %}</dd></div>
+        </dl>
+      </section>
+
+      <section class="prospect-card">
+        <h2 class="prospect-card-title">Follow-up Status</h2>
+        <dl class="prospect-kv-list">
+          <div><dt>Contact Attempts</dt><dd>{{ contact_attempt_count }}</dd></div>
+          <div><dt>Converted</dt><dd>{% if has_student_record %}Yes{% else %}No{% endif %}</dd></div>
+          <div><dt>Notes</dt><dd>{{ object.notes|default:"No notes yet." }}</dd></div>
+        </dl>
+      </section>
+    </main>
+
+    <aside class="prospect-side-col">
+      <section class="prospect-card">
+        <h2 class="prospect-card-title">Next Actions</h2>
+        <div class="d-grid gap-2">
+          <a class="btn prospect-btn prospect-btn-secondary" href="{% url update_url_name object.pk %}">Update Prospect Details</a>
+          {% if not has_student_record %}
+            <form method="post" action="{% url 'core:prospect-convert-to-student' object.pk %}" class="m-0">
+              {% csrf_token %}
+              <button type="submit" class="btn prospect-btn prospect-btn-primary w-100">Convert to Student</button>
+            </form>
+          {% else %}
+            <a class="btn prospect-btn prospect-btn-primary" href="{% url 'core:student-detail' object.student_record.pk %}">Open Student Record</a>
+          {% endif %}
+          <a class="btn prospect-btn prospect-btn-neutral" href="{% url 'core:communication-create' %}?recipient_type=prospect&prospect={{ object.pk }}">Log Follow-up Communication</a>
         </div>
-      </div>
+      </section>
 
-      <details class="card shadow-sm mt-3">
-        <summary class="card-header">Secondary Details</summary>
-        <div class="table-responsive">
-          <table class="table table-striped mb-0">
-            <tbody>
-              {% for label, value in secondary_fields %}
-                <tr>
-                  <th style="width: 38%;">{{ label }}</th>
-                  <td>{{ value|default:"-" }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </details>
-    </div>
-
-    <div class="col-lg-7">
-      <div class="card shadow-sm">
-        <div class="card-header">Communication History</div>
-        <div class="list-group list-group-flush">
+      <section class="prospect-card">
+        <h2 class="prospect-card-title">Communication History</h2>
+        <div class="prospect-timeline" role="list" aria-label="Communication activity">
           {% for comm in communications %}
-            <div class="list-group-item">
-              <div class="fw-semibold">{{ comm.subject|default:comm.get_communication_type_display }}</div>
-              <div class="small text-muted">
+            <article class="prospect-timeline-item" role="listitem">
+              <p class="prospect-timeline-title">{{ comm.subject|default:comm.get_communication_type_display }}</p>
+              <p class="prospect-timeline-meta">
                 {{ comm.created_at|date:"M d, Y H:i" }} · {{ comm.get_channel_display }} · {{ comm.get_delivery_status_display }}
-              </div>
+              </p>
               {% if comm.body %}
-                <div class="mt-2">{{ comm.body|linebreaksbr }}</div>
+                <p class="prospect-timeline-body">{{ comm.body|linebreaksbr }}</p>
               {% endif %}
-            </div>
+            </article>
           {% empty %}
-            <div class="list-group-item text-muted">No communications recorded yet.</div>
+            <div class="prospect-empty-state" role="status">
+              <p class="mb-1 fw-semibold">No communications yet</p>
+              <p class="mb-0">Once follow-ups are logged, this timeline will show outreach, delivery status, and context.</p>
+            </div>
           {% endfor %}
         </div>
-      </div>
-    </div>
+      </section>
+    </aside>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .prospect-detail-page {
+    display: grid;
+    gap: 1rem;
+  }
+  .prospect-detail-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    border: 1px solid var(--crm-border);
+    border-radius: 16px;
+    padding: 1rem 1.1rem;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(20, 24, 36, 0.04);
+  }
+  .prospect-title {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    line-height: 1.15;
+    margin: 0;
+    font-weight: 800;
+    color: var(--crm-text);
+  }
+  .prospect-status-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.55rem;
+  }
+  .prospect-chip {
+    border-radius: 999px;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+  }
+  .prospect-chip-neutral { background: #f4f5f9; color: #2e3442; border-color: #e5e8f0; }
+  .prospect-chip-success { background: #edf8f2; color: #1d6a42; border-color: #cdebd9; }
+  .prospect-chip-warning { background: #fff8e8; color: #7a5a00; border-color: #f0dfb4; }
+  .prospect-chip-danger { background: #fdeef0; color: #8a1f2d; border-color: #f5c9cf; }
+  .prospect-action-group {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .prospect-btn {
+    min-height: 40px;
+    border-radius: 10px;
+    font-weight: 600;
+    padding: 0.45rem 0.85rem;
+  }
+  .prospect-btn:focus-visible {
+    outline: 2px solid rgba(70, 40, 80, 0.35);
+    outline-offset: 2px;
+  }
+  .prospect-btn-primary {
+    color: #fff;
+    background: var(--crm-primary);
+    border: 1px solid var(--crm-primary);
+  }
+  .prospect-btn-primary:hover { background: var(--crm-primary-strong); border-color: var(--crm-primary-strong); color: #fff; }
+  .prospect-btn-secondary { color: #fff; background: #546179; border: 1px solid #546179; }
+  .prospect-btn-secondary:hover { color: #fff; background: #434e64; border-color: #434e64; }
+  .prospect-btn-neutral { color: #334155; background: #fff; border: 1px solid #d7deea; }
+  .prospect-btn-neutral:hover { background: #f6f8fc; color: #1f2a37; }
+  .prospect-btn-danger { color: #fff; background: #c5394a; border: 1px solid #c5394a; }
+  .prospect-btn-danger:hover { color: #fff; background: #a82b3a; border-color: #a82b3a; }
+  .prospect-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.75fr) minmax(280px, 1fr);
+    gap: 1rem;
+  }
+  .prospect-main-col,
+  .prospect-side-col {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
+  }
+  .prospect-card {
+    border: 1px solid var(--crm-border);
+    border-radius: 14px;
+    background: #fff;
+    padding: 1rem;
+    box-shadow: 0 2px 6px rgba(20, 24, 36, 0.04);
+  }
+  .prospect-card-title {
+    margin: 0 0 0.9rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--crm-text);
+  }
+  .prospect-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+  }
+  .prospect-summary-item {
+    border: 1px solid #edf0f6;
+    border-radius: 10px;
+    padding: 0.65rem 0.75rem;
+    background: #fcfdff;
+  }
+  .prospect-label {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--crm-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+  }
+  .prospect-value {
+    margin: 0.2rem 0 0;
+    font-size: 0.98rem;
+    color: var(--crm-text);
+    font-weight: 600;
+  }
+  .prospect-kv-list {
+    margin: 0;
+    display: grid;
+    gap: 0.65rem;
+  }
+  .prospect-kv-list div {
+    display: grid;
+    grid-template-columns: minmax(140px, 0.9fr) minmax(0, 2fr);
+    gap: 0.75rem;
+    border-bottom: 1px solid #f0f2f7;
+    padding-bottom: 0.55rem;
+  }
+  .prospect-kv-list div:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+  .prospect-kv-list dt {
+    margin: 0;
+    color: var(--crm-muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .prospect-kv-list dd {
+    margin: 0;
+    color: var(--crm-text);
+    font-size: 0.94rem;
+    font-weight: 600;
+  }
+  .prospect-timeline {
+    display: grid;
+    gap: 0.7rem;
+  }
+  .prospect-timeline-item {
+    border-left: 3px solid #d8deea;
+    padding: 0.1rem 0 0.1rem 0.7rem;
+  }
+  .prospect-timeline-title {
+    margin: 0;
+    font-size: 0.92rem;
+    font-weight: 700;
+  }
+  .prospect-timeline-meta {
+    margin: 0.2rem 0 0;
+    color: var(--crm-muted);
+    font-size: 0.8rem;
+  }
+  .prospect-timeline-body {
+    margin: 0.45rem 0 0;
+    color: #2d3647;
+    font-size: 0.88rem;
+  }
+  .prospect-empty-state {
+    border: 1px dashed #d8deea;
+    background: #fafbfd;
+    border-radius: 12px;
+    padding: 0.9rem;
+    color: #4b5565;
+    font-size: 0.9rem;
+  }
+  @media (max-width: 991.98px) {
+    .prospect-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .prospect-summary-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .prospect-kv-list div {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.35rem;
+    }
+  }
+</style>
 {% endblock %}

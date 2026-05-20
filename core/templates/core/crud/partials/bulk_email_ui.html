@@ -1,0 +1,47 @@
+<div class="bulk-email-toolbar d-none sticky-top mb-2" id="{{ prefix }}-bulk-toolbar" aria-live="polite">
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <strong id="{{ prefix }}-selected-count">0 {{ entity_label }} selected</strong>
+    <button type="button" class="btn btn-sm btn-primary" id="{{ prefix }}-send-email" disabled>Send Message</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="{{ prefix }}-clear-selection">Clear selection</button>
+  </div>
+  <div class="small text-muted mt-2 d-none" id="{{ prefix }}-select-all-prompt">
+    <span id="{{ prefix }}-select-all-prompt-text"></span>
+    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" id="{{ prefix }}-select-all-filtered"></button>
+  </div>
+  <div class="small text-success mt-2 d-none" id="{{ prefix }}-all-filtered-selected"></div>
+</div>
+
+<div class="modal fade" id="{{ prefix }}-bulk-message-modal" tabindex="-1" aria-labelledby="{{ prefix }}-bulk-message-modal-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title fs-5" id="{{ prefix }}-bulk-message-modal-label">Send message to selected records</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted mb-3" id="{{ prefix }}-modal-recipient-count">0 {{ entity_label }} selected</p>
+        <div class="mb-3">
+          <label for="{{ prefix }}-bulk-message-subject" class="form-label">Subject</label>
+          <input type="text" class="form-control" id="{{ prefix }}-bulk-message-subject" placeholder="Enter subject">
+        </div>
+        <div>
+          <label for="{{ prefix }}-bulk-message-body" class="form-label">Message</label>
+          <textarea class="form-control" id="{{ prefix }}-bulk-message-body" rows="5" placeholder="Write your message"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="{{ prefix }}-modal-send-message">Send Message</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080;">
+  <div id="{{ prefix }}-bulk-message-toast" class="toast align-items-center text-bg-success border-0" role="status" aria-live="polite" aria-atomic="true">
+    <div class="d-flex">
+      <div class="toast-body" id="{{ prefix }}-bulk-message-toast-body">Message ready.</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+  </div>
+</div>

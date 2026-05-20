@@ -70,6 +70,14 @@
       </div>
     </div>
   </div>
+  <div class="col-md-6 col-lg-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Payment Status</div>
+        <div class="fw-semibold">{{ payment_status }}</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="card shadow-sm mb-3">
@@ -83,6 +91,10 @@
       <div class="col-md-6">
         <div class="text-muted small">Discount</div>
         <div class="fw-semibold">${{ object.discount_amount|floatformat:2 }}</div>
+      </div>
+      <div class="col-md-6">
+        <div class="text-muted small">Total Amount</div>
+        <div class="fw-semibold">${{ object.total_amount|floatformat:2 }}</div>
       </div>
       <div class="col-md-6">
         <div class="text-muted small">Balance Due</div>

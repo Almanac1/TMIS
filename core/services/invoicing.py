@@ -9,6 +9,18 @@ from core.models import Enrollment, Invoice, InvoiceStatus
 
 DEFAULT_TAX_RATE = Decimal("0.00")
 INVOICE_DUE_DAYS = 14
+DEFAULT_YEAR = 2026
+
+COURSE_CODE_ALIASES = {
+    "AL": ("tm-sidhi", "tm-sidhi course", "sidhi", "sid"),
+    "AT": ("advanced technique", "advanced technique i", "advanced technique ii", "at"),
+    "TMA": ("tm - adult", "tm adult", "adult tm"),
+    "TMC": ("tm - couple", "tm couple", "couple tm"),
+    "TMF": ("tm - family", "tm family", "family tm"),
+    "TMS": ("tm - student", "tm student", "student tm"),
+    "TMWOW": ("tm - word of wisdom", "tm word of wisdom", "word of wisdom"),
+    "KC": ("knowledge courses", "knowledge course", "kc"),
+}
 
 
 def _as_decimal(value) -> Decimal:
@@ -24,14 +36,68 @@ def get_tax_rate() -> Decimal:
     return _as_decimal(configured)
 
 
-def _generate_unique_invoice_number() -> str:
-    date_prefix = timezone.localdate().strftime("%Y%m%d")
+def _normalize(value: str) -> str:
+    return " ".join((value or "").strip().lower().replace("-", " ").replace("_", " ").split())
+
+
+def _resolve_course_code(enrollment: Enrollment) -> str:
+    course = getattr(enrollment.session, "course", None)
+    if not course:
+        return "UNK"
+
+    raw_code = (getattr(course, "code", "") or "").strip()
+    if raw_code:
+        return raw_code
+
+    normalized_name = _normalize(getattr(course, "name", ""))
+    for code, aliases in COURSE_CODE_ALIASES.items():
+        if normalized_name in {_normalize(alias) for alias in aliases}:
+            if code == "TMA":
+                return "TMa"
+            if code == "TMC":
+                return "TMc"
+            if code == "TMF":
+                return "TMf"
+            if code == "TMS":
+                return "TMs"
+            if code == "TMWOW":
+                return "TMwow"
+            if code == "KC":
+                return "Kc"
+            return code
+    return "UNK"
+
+
+def _next_sequence_for(code: str, year: int) -> int:
+    prefix = f"{code}-{year}-"
+    existing = (
+        Invoice.objects.filter(invoice_number__startswith=prefix)
+        .order_by("-invoice_number")
+        .values_list("invoice_number", flat=True)
+    )
+    max_seq = 0
+    for number in existing:
+        parts = number.rsplit("-", 1)
+        if len(parts) != 2:
+            continue
+        try:
+            seq = int(parts[1])
+        except (TypeError, ValueError):
+            continue
+        if seq > max_seq:
+            max_seq = seq
+    return max_seq + 1
+
+
+def _generate_course_invoice_number(enrollment: Enrollment, issue_date) -> str:
+    code = _resolve_course_code(enrollment)
+    year = issue_date.year if issue_date else DEFAULT_YEAR
     for _ in range(100):
-        suffix = timezone.now().strftime("%H%M%S%f")[-8:]
-        invoice_number = f"INV-{date_prefix}-{suffix}"
-        if not Invoice.objects.filter(invoice_number=invoice_number).exists():
-            return invoice_number
-    raise RuntimeError("Unable to generate a unique invoice number.")
+        sequence = _next_sequence_for(code, year)
+        candidate = f"{code}-{year}-{sequence:04d}"
+        if not Invoice.objects.filter(invoice_number=candidate).exists():
+            return candidate
+    raise RuntimeError("Unable to generate a unique course-based invoice number.")
 
 
 def generate_invoice_for_enrollment(enrollment: Enrollment):
@@ -62,14 +128,14 @@ def generate_invoice_for_enrollment(enrollment: Enrollment):
             invoice = Invoice.objects.create(
                 owner=enrollment_locked.student.owner,
                 enrollment=enrollment_locked,
-                invoice_number=_generate_unique_invoice_number(),
+                invoice_number=_generate_course_invoice_number(enrollment_locked, issue_date),
                 issue_date=issue_date,
                 due_date=due_date,
                 subtotal=subtotal,
                 discount_amount=discount_amount,
                 tax_amount=tax_amount,
                 total_amount=total_amount,
-                status=InvoiceStatus.DRAFT,
+                status=InvoiceStatus.SENT,
             )
             return invoice, True
     except IntegrityError:

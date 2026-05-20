@@ -1,8 +1,10 @@
 from datetime import datetime, time
 from decimal import Decimal
+import json
 
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -10,8 +12,8 @@ from django.core.mail import EmailMessage
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
-from django.db.models.functions import Coalesce
-from django.http import JsonResponse
+from django.db.models.functions import Coalesce, Concat
+from django.http import JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -29,6 +31,7 @@ from django.views.generic import (
 
 from .forms import (
     StudentForm,
+    StudentCreateForm,
     DisbursementReportingFilterForm,
     CommunicationForm,
     EnrollmentForm,
@@ -41,6 +44,7 @@ from .forms import (
 from .models import (
     Communication,
     CommunicationChannel,
+    CommunicationType,
     DeliveryStatus,
     Contact,
     Course,
@@ -48,12 +52,15 @@ from .models import (
     Disbursement,
     Enrollment,
     Inquiry,
+    InquiryChannel,
+    InquiryStatus,
     InterviewForm,
     Invoice,
     Location,
     Meditator,
     Payment,
     Prospect,
+    RecipientType,
     Student,
     Teacher,
     TeacherSpecialization,
@@ -73,6 +80,7 @@ from .services.ownership import scope_queryset_for_user
 from .services.teacher_earnings import get_teacher_earnings_dashboard_data
 from .services.home_dashboard import get_home_dashboard_data
 from .services.invoicing import generate_invoice_for_enrollment
+from .services.enrollment_eligibility import check_course_eligibility, validate_course_eligibility
 
 
 @require_POST
@@ -82,6 +90,129 @@ def secure_logout_view(request):
     if username:
         messages.success(request, f"You have been logged out, {username}.")
     return redirect("core:login")
+
+
+def _build_bulk_filtered_queryset(recipient_kind, user, source_query):
+    class _SimpleRequest:
+        def __init__(self, get_data, request_user):
+            self.GET = get_data
+            self.user = request_user
+
+    querydict = QueryDict(source_query or "", mutable=False)
+    simple_request = _SimpleRequest(querydict, user)
+
+    if recipient_kind == "prospect":
+        view = ProspectListView()
+        view.request = simple_request
+        return view.get_queryset()
+    if recipient_kind == "student":
+        view = StudentListView()
+        view.request = simple_request
+        return view.get_queryset()
+    if recipient_kind == "contact":
+        view = ContactListView()
+        view.request = simple_request
+        return view.get_queryset()
+    if recipient_kind == "meditator":
+        view = MeditatorListView()
+        view.request = simple_request
+        return view.get_queryset()
+    return None
+
+
+def _collect_bulk_recipient_emails(recipient_kind, queryset):
+    emails = []
+    if recipient_kind == "prospect":
+        for obj in queryset.select_related("contact"):
+            if obj.contact_id and obj.contact and obj.contact.email:
+                emails.append(obj.contact.email.strip())
+    elif recipient_kind == "student":
+        for obj in queryset.select_related("prospect__contact"):
+            if obj.prospect_id and obj.prospect.contact_id and obj.prospect.contact.email:
+                emails.append(obj.prospect.contact.email.strip())
+    elif recipient_kind == "contact":
+        for obj in queryset:
+            if obj.email:
+                emails.append(obj.email.strip())
+    elif recipient_kind == "meditator":
+        for obj in queryset.select_related("student__prospect__contact"):
+            if (
+                obj.student_id
+                and obj.student.prospect_id
+                and obj.student.prospect.contact_id
+                and obj.student.prospect.contact.email
+            ):
+                emails.append(obj.student.prospect.contact.email.strip())
+    return sorted({email for email in emails if email})
+
+
+@require_POST
+@login_required(login_url="/login/")
+def bulk_message_send_view(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"ok": False, "error": "Invalid payload."}, status=400)
+
+    recipient_kind = (payload.get("recipient_kind") or "").strip().lower()
+    bulk_mode = (payload.get("bulk_mode") or "selected").strip().lower()
+    source_query = (payload.get("source_query") or "").strip()
+    selected_ids = payload.get("selected_ids") or []
+    subject = (payload.get("subject") or "").strip()
+    body = (payload.get("body") or "").strip()
+
+    if recipient_kind not in {"prospect", "student", "contact", "meditator"}:
+        return JsonResponse({"ok": False, "error": "Unsupported recipient type."}, status=400)
+    if not body:
+        return JsonResponse({"ok": False, "error": "Message body is required."}, status=400)
+
+    filtered_queryset = _build_bulk_filtered_queryset(recipient_kind, request.user, source_query)
+    if filtered_queryset is None:
+        return JsonResponse({"ok": False, "error": "Unable to build recipient set."}, status=400)
+
+    if bulk_mode == "filtered":
+        recipient_queryset = filtered_queryset
+    else:
+        normalized_ids = []
+        for value in selected_ids:
+            try:
+                normalized_ids.append(int(value))
+            except (TypeError, ValueError):
+                continue
+        if not normalized_ids:
+            return JsonResponse({"ok": False, "error": "No selected recipients found."}, status=400)
+        recipient_queryset = filtered_queryset.filter(pk__in=normalized_ids)
+
+    recipient_emails = _collect_bulk_recipient_emails(recipient_kind, recipient_queryset)
+    if not recipient_emails:
+        return JsonResponse(
+            {"ok": False, "error": "No recipients with valid email addresses found."},
+            status=400,
+        )
+
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "rokosun@tm.org")
+    sent_count = 0
+    failed_count = 0
+    for recipient_email in recipient_emails:
+        try:
+            EmailMessage(
+                subject=subject or "TMIS Message",
+                body=body,
+                from_email=from_email,
+                to=[recipient_email],
+            ).send(fail_silently=False)
+            sent_count += 1
+        except Exception:
+            failed_count += 1
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "sent_count": sent_count,
+            "failed_count": failed_count,
+            "recipient_count": len(recipient_emails),
+        }
+    )
 
 
 CRUD_MODELS = [
@@ -152,24 +283,79 @@ class MeditatorListView(ProductLoginRequiredMixin, ListView):
             model=Meditator,
             user=self.request.user,
         )
+        status = (self.request.GET.get("status") or "").strip()
+        assigned_user = (self.request.GET.get("assigned_user") or "").strip()
+        activity = (self.request.GET.get("activity") or "").strip().lower()
+        course = (self.request.GET.get("course") or "").strip()
+        created_from = (self.request.GET.get("created_from") or "").strip()
+        created_to = (self.request.GET.get("created_to") or "").strip()
+
+        if status:
+            queryset = queryset.filter(student__enrollment_status=status)
+        if assigned_user.isdigit():
+            queryset = queryset.filter(student__owner_id=int(assigned_user))
+        if activity == "active":
+            queryset = queryset.exclude(student__enrollment_status=EnrollmentStatus.INACTIVE)
+        elif activity == "inactive":
+            queryset = queryset.filter(student__enrollment_status=EnrollmentStatus.INACTIVE)
+        if course.isdigit():
+            queryset = queryset.filter(student__enrollments__session__course_id=int(course))
+        if created_from:
+            queryset = queryset.filter(transitioned_at__date__gte=created_from)
+        if created_to:
+            queryset = queryset.filter(transitioned_at__date__lte=created_to)
+
         query = (self.request.GET.get("q") or "").strip()
         if query:
-            filters = (
-                Q(student__prospect__contact__first_name__icontains=query)
-                | Q(student__prospect__contact__last_name__icontains=query)
-                | Q(student__prospect__contact__email__icontains=query)
-                | Q(student__prospect__contact__phone_number__icontains=query)
-                | Q(student__teacher__first_name__icontains=query)
-                | Q(student__teacher__last_name__icontains=query)
-                | Q(student__enrollment_status__icontains=query)
-            )
-            if query.isdigit():
-                filters |= Q(pk=int(query)) | Q(student__pk=int(query))
-            queryset = queryset.filter(filters)
-        return queryset
+            terms = [part for part in query.split() if part]
+            if terms:
+                queryset = queryset.annotate(
+                    search_full_name=Concat(
+                        F("student__prospect__contact__first_name"),
+                        Value(" "),
+                        F("student__prospect__contact__last_name"),
+                    )
+                )
+                token_lookups = [
+                    "search_full_name__icontains",
+                    "student__prospect__contact__first_name__icontains",
+                    "student__prospect__contact__last_name__icontains",
+                    "student__prospect__contact__email__icontains",
+                    "student__prospect__contact__phone_number__icontains",
+                    "student__teacher__first_name__icontains",
+                    "student__teacher__last_name__icontains",
+                    "student__enrollment_status__icontains",
+                    "student__owner__username__icontains",
+                    "student__owner__email__icontains",
+                ]
+                combined = Q()
+                for term in terms:
+                    per_term = Q()
+                    for lookup in token_lookups:
+                        per_term |= Q(**{lookup: term})
+                    if term.isdigit():
+                        per_term |= Q(pk=int(term)) | Q(student__pk=int(term))
+                    combined &= per_term
+                phrase = Q(search_full_name__icontains=query)
+                if query.isdigit():
+                    phrase |= Q(pk=int(query)) | Q(student__pk=int(query))
+                queryset = queryset.filter(combined | phrase)
+
+        return queryset.distinct()
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        UserModel = get_user_model()
+        scoped_meditators = scope_queryset_for_user(
+            queryset=Meditator.objects.select_related("student__owner"),
+            model=Meditator,
+            user=self.request.user,
+        )
+        owner_ids = list(
+            scoped_meditators.exclude(student__owner__isnull=True)
+            .values_list("student__owner_id", flat=True)
+            .distinct()
+        )
         context["search_query"] = (self.request.GET.get("q") or "").strip()
         params = self.request.GET.copy()
         params.pop("page", None)
@@ -178,6 +364,21 @@ class MeditatorListView(ProductLoginRequiredMixin, ListView):
         context["search_label"] = "Search Meditators"
         context["search_placeholder"] = "Search by student, governor, status, email, phone, or ID"
         context["search_clear_url"] = reverse_lazy("core:meditator-list")
+        context["meditator_status_choices"] = EnrollmentStatus.choices
+        context["meditator_owner_choices"] = UserModel.objects.filter(id__in=owner_ids).order_by(
+            "first_name", "last_name", "username"
+        )
+        context["meditator_course_choices"] = Course.objects.filter(
+            sessions__enrollments__student__meditator_profile__in=scoped_meditators
+        ).distinct().order_by("name")
+        context["meditator_filter_values"] = {
+            "status": (self.request.GET.get("status") or "").strip(),
+            "assigned_user": (self.request.GET.get("assigned_user") or "").strip(),
+            "activity": (self.request.GET.get("activity") or "").strip().lower(),
+            "course": (self.request.GET.get("course") or "").strip(),
+            "created_from": (self.request.GET.get("created_from") or "").strip(),
+            "created_to": (self.request.GET.get("created_to") or "").strip(),
+        }
         return context
 
 
@@ -642,6 +843,50 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
         if not query:
             return queryset
 
+        if self.model is Student:
+            tokens = [part for part in query.split() if part]
+            if not tokens:
+                return queryset
+
+            queryset = queryset.annotate(
+                search_full_name=Concat(
+                    F("prospect__contact__first_name"),
+                    Value(" "),
+                    F("prospect__contact__last_name"),
+                )
+            )
+            token_lookups = [
+                "search_full_name__icontains",
+                "prospect__contact__first_name__icontains",
+                "prospect__contact__last_name__icontains",
+                "prospect__contact__email__icontains",
+                "prospect__contact__phone_number__icontains",
+                "enrollment_status__icontains",
+                "teacher__first_name__icontains",
+                "teacher__last_name__icontains",
+                "owner__username__icontains",
+                "owner__email__icontains",
+                "owner__first_name__icontains",
+                "owner__last_name__icontains",
+                "prospect__status__icontains",
+                "prospect__source__icontains",
+            ]
+            combined = Q()
+            for token in tokens:
+                per_token = Q()
+                for lookup in token_lookups:
+                    per_token |= Q(**{lookup: token})
+                if token.isdigit():
+                    per_token |= Q(pk=int(token))
+                combined &= per_token
+
+            # Also allow single-field phrase search for quoted/long inputs.
+            phrase_filters = Q(search_full_name__icontains=query)
+            if query.isdigit():
+                phrase_filters |= Q(pk=int(query))
+
+            return queryset.filter(combined | phrase_filters).distinct()
+
         if self.model is Contact and query.isdigit():
             id_match = queryset.filter(pk=int(query))
             if id_match.exists():
@@ -656,6 +901,146 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
             return queryset.filter(filters)
         return queryset
 
+    def _apply_student_filters(self, queryset):
+        if self.model is not Student:
+            return queryset
+
+        status = (self.request.GET.get("status") or "").strip()
+        assigned_user = (self.request.GET.get("assigned_user") or "").strip()
+        activity = (self.request.GET.get("activity") or "").strip().lower()
+        course = (self.request.GET.get("course") or "").strip()
+        created_from = (self.request.GET.get("created_from") or "").strip()
+        created_to = (self.request.GET.get("created_to") or "").strip()
+
+        if status:
+            queryset = queryset.filter(enrollment_status=status)
+        if assigned_user.isdigit():
+            queryset = queryset.filter(owner_id=int(assigned_user))
+        if activity == "active":
+            queryset = queryset.exclude(enrollment_status=EnrollmentStatus.INACTIVE)
+        elif activity == "inactive":
+            queryset = queryset.filter(enrollment_status=EnrollmentStatus.INACTIVE)
+        if course.isdigit():
+            queryset = queryset.filter(enrollments__session__course_id=int(course))
+        if created_from:
+            queryset = queryset.filter(created_at__date__gte=created_from)
+        if created_to:
+            queryset = queryset.filter(created_at__date__lte=created_to)
+        return queryset.distinct()
+
+    def _apply_prospect_filters(self, queryset):
+        if self.model is not Prospect:
+            return queryset
+
+        status = (self.request.GET.get("status") or "").strip()
+        assigned_user = (self.request.GET.get("assigned_user") or "").strip()
+        activity = (self.request.GET.get("activity") or "").strip().lower()
+        course = (self.request.GET.get("course") or "").strip()
+        created_from = (self.request.GET.get("created_from") or "").strip()
+        created_to = (self.request.GET.get("created_to") or "").strip()
+
+        if status:
+            queryset = queryset.filter(status=status)
+        if assigned_user.isdigit():
+            queryset = queryset.filter(owner_id=int(assigned_user))
+        if activity == "active":
+            queryset = queryset.filter(is_archived=False)
+        elif activity == "inactive":
+            queryset = queryset.filter(is_archived=True)
+        if course.isdigit():
+            queryset = queryset.filter(course_interest_id=int(course))
+        if created_from:
+            queryset = queryset.filter(created_at__date__gte=created_from)
+        if created_to:
+            queryset = queryset.filter(created_at__date__lte=created_to)
+        return queryset.distinct()
+
+    def _apply_contact_filters(self, queryset):
+        if self.model is not Contact:
+            return queryset
+
+        conversion = (self.request.GET.get("conversion") or "").strip().lower()
+        has_email = (self.request.GET.get("has_email") or "").strip().lower()
+        has_phone = (self.request.GET.get("has_phone") or "").strip().lower()
+        created_from = (self.request.GET.get("created_from") or "").strip()
+        created_to = (self.request.GET.get("created_to") or "").strip()
+
+        if conversion == "converted":
+            queryset = queryset.filter(prospect__isnull=False)
+        elif conversion == "not_converted":
+            queryset = queryset.filter(prospect__isnull=True)
+        if has_email == "yes":
+            queryset = queryset.exclude(email__isnull=True).exclude(email="")
+        elif has_email == "no":
+            queryset = queryset.filter(Q(email__isnull=True) | Q(email=""))
+        if has_phone == "yes":
+            queryset = queryset.exclude(phone_number__isnull=True).exclude(phone_number="")
+        elif has_phone == "no":
+            queryset = queryset.filter(Q(phone_number__isnull=True) | Q(phone_number=""))
+        if created_from:
+            queryset = queryset.filter(created_at__date__gte=created_from)
+        if created_to:
+            queryset = queryset.filter(created_at__date__lte=created_to)
+        return queryset.distinct()
+
+    def _apply_inquiry_filters(self, queryset):
+        if self.model is not Inquiry:
+            return queryset
+
+        status = (self.request.GET.get("status") or "").strip()
+        assigned_user = (self.request.GET.get("assigned_user") or "").strip()
+        channel = (self.request.GET.get("channel") or "").strip()
+        recipient_scope = (self.request.GET.get("recipient_scope") or "").strip().lower()
+        created_from = (self.request.GET.get("created_from") or "").strip()
+        created_to = (self.request.GET.get("created_to") or "").strip()
+
+        if status:
+            queryset = queryset.filter(status=status)
+        if assigned_user.isdigit():
+            queryset = queryset.filter(assigned_to_id=int(assigned_user))
+        if channel:
+            queryset = queryset.filter(channel=channel)
+        if recipient_scope == "student":
+            queryset = queryset.filter(student__isnull=False)
+        elif recipient_scope == "prospect":
+            queryset = queryset.filter(prospect__isnull=False)
+        if created_from:
+            queryset = queryset.filter(inquiry_date__date__gte=created_from)
+        if created_to:
+            queryset = queryset.filter(inquiry_date__date__lte=created_to)
+        return queryset.distinct()
+
+    def _apply_communication_filters(self, queryset):
+        if self.model is not Communication:
+            return queryset
+
+        status = (self.request.GET.get("status") or "").strip()
+        assigned_user = (self.request.GET.get("assigned_user") or "").strip()
+        channel = (self.request.GET.get("channel") or "").strip()
+        recipient_type = (self.request.GET.get("recipient_type") or "").strip()
+        communication_type = (self.request.GET.get("communication_type") or "").strip()
+        course = (self.request.GET.get("course") or "").strip()
+        created_from = (self.request.GET.get("created_from") or "").strip()
+        created_to = (self.request.GET.get("created_to") or "").strip()
+
+        if status:
+            queryset = queryset.filter(delivery_status=status)
+        if assigned_user.isdigit():
+            queryset = queryset.filter(owner_id=int(assigned_user))
+        if channel:
+            queryset = queryset.filter(channel=channel)
+        if recipient_type:
+            queryset = queryset.filter(recipient_type=recipient_type)
+        if communication_type:
+            queryset = queryset.filter(communication_type=communication_type)
+        if course.isdigit():
+            queryset = queryset.filter(enrollment__course_id=int(course))
+        if created_from:
+            queryset = queryset.filter(created_at__date__gte=created_from)
+        if created_to:
+            queryset = queryset.filter(created_at__date__lte=created_to)
+        return queryset.distinct()
+
     def get_queryset(self):
         queryset = super().get_queryset()
         queryset = scope_queryset_for_user(
@@ -665,6 +1050,7 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
         )
         if self.model is Prospect:
             queryset = queryset.select_related("contact", "teacher", "owner")
+            queryset = self._apply_prospect_filters(queryset)
         if self.model is Prospect:
             converted_filter = (
                 Q(converted_to_student=True)
@@ -687,6 +1073,26 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
             queryset = queryset.select_related("enrollment__student__prospect")
         if self.model is Payment:
             queryset = queryset.select_related("invoice__enrollment__student__prospect")
+        if self.model is Inquiry:
+            queryset = queryset.select_related("student__prospect__contact", "prospect__contact", "assigned_to")
+            queryset = self._apply_inquiry_filters(queryset)
+        if self.model is Communication:
+            queryset = queryset.select_related(
+                "student__prospect__contact",
+                "prospect__contact",
+                "owner",
+                "enrollment__course",
+            )
+            queryset = self._apply_communication_filters(queryset)
+        if self.model is Contact:
+            queryset = self._apply_contact_filters(queryset)
+        if self.model is Student:
+            queryset = queryset.select_related(
+                "owner",
+                "prospect__contact",
+                "teacher",
+            )
+            queryset = self._apply_student_filters(queryset)
         return self._apply_search(queryset)
 
     def get_template_names(self):
@@ -710,6 +1116,124 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
             "Search by ID, name, email, phone, status, or related details"
         )
         context["search_clear_url"] = reverse_lazy(f"core:{self._model_slug()}-list")
+        if self.model is Student:
+            UserModel = get_user_model()
+            scoped_students = scope_queryset_for_user(
+                queryset=Student.objects.select_related("owner"),
+                model=Student,
+                user=self.request.user,
+            )
+            owner_ids = list(
+                scoped_students.exclude(owner__isnull=True)
+                .values_list("owner_id", flat=True)
+                .distinct()
+            )
+            context["student_status_choices"] = EnrollmentStatus.choices
+            context["student_owner_choices"] = UserModel.objects.filter(id__in=owner_ids).order_by(
+                "first_name", "last_name", "username"
+            )
+            context["student_course_choices"] = Course.objects.filter(
+                sessions__enrollments__student__in=scoped_students
+            ).distinct().order_by("name")
+            context["student_filter_values"] = {
+                "status": (self.request.GET.get("status") or "").strip(),
+                "assigned_user": (self.request.GET.get("assigned_user") or "").strip(),
+                "activity": (self.request.GET.get("activity") or "").strip().lower(),
+                "course": (self.request.GET.get("course") or "").strip(),
+                "created_from": (self.request.GET.get("created_from") or "").strip(),
+                "created_to": (self.request.GET.get("created_to") or "").strip(),
+            }
+        if self.model is Prospect:
+            UserModel = get_user_model()
+            scoped_prospects = scope_queryset_for_user(
+                queryset=Prospect.objects.select_related("owner", "course_interest"),
+                model=Prospect,
+                user=self.request.user,
+            )
+            owner_ids = list(
+                scoped_prospects.exclude(owner__isnull=True)
+                .values_list("owner_id", flat=True)
+                .distinct()
+            )
+            context["prospect_owner_choices"] = UserModel.objects.filter(id__in=owner_ids).order_by(
+                "first_name", "last_name", "username"
+            )
+            context["prospect_course_choices"] = Course.objects.filter(
+                interested_prospects__in=scoped_prospects
+            ).distinct().order_by("name")
+            context["prospect_filter_values"] = {
+                "status": (self.request.GET.get("status") or "").strip(),
+                "assigned_user": (self.request.GET.get("assigned_user") or "").strip(),
+                "activity": (self.request.GET.get("activity") or "").strip().lower(),
+                "course": (self.request.GET.get("course") or "").strip(),
+                "created_from": (self.request.GET.get("created_from") or "").strip(),
+                "created_to": (self.request.GET.get("created_to") or "").strip(),
+            }
+        if self.model is Contact:
+            context["contact_filter_values"] = {
+                "conversion": (self.request.GET.get("conversion") or "").strip().lower(),
+                "has_email": (self.request.GET.get("has_email") or "").strip().lower(),
+                "has_phone": (self.request.GET.get("has_phone") or "").strip().lower(),
+                "created_from": (self.request.GET.get("created_from") or "").strip(),
+                "created_to": (self.request.GET.get("created_to") or "").strip(),
+            }
+        if self.model is Inquiry:
+            UserModel = get_user_model()
+            scoped_inquiries = scope_queryset_for_user(
+                queryset=Inquiry.objects.select_related("assigned_to"),
+                model=Inquiry,
+                user=self.request.user,
+            )
+            assigned_ids = list(
+                scoped_inquiries.exclude(assigned_to__isnull=True)
+                .values_list("assigned_to_id", flat=True)
+                .distinct()
+            )
+            context["inquiry_status_choices"] = InquiryStatus.choices
+            context["inquiry_channel_choices"] = InquiryChannel.choices
+            context["inquiry_assigned_user_choices"] = UserModel.objects.filter(id__in=assigned_ids).order_by(
+                "first_name", "last_name", "username"
+            )
+            context["inquiry_filter_values"] = {
+                "status": (self.request.GET.get("status") or "").strip(),
+                "assigned_user": (self.request.GET.get("assigned_user") or "").strip(),
+                "channel": (self.request.GET.get("channel") or "").strip(),
+                "recipient_scope": (self.request.GET.get("recipient_scope") or "").strip().lower(),
+                "created_from": (self.request.GET.get("created_from") or "").strip(),
+                "created_to": (self.request.GET.get("created_to") or "").strip(),
+            }
+        if self.model is Communication:
+            UserModel = get_user_model()
+            scoped_comms = scope_queryset_for_user(
+                queryset=Communication.objects.select_related("owner"),
+                model=Communication,
+                user=self.request.user,
+            )
+            owner_ids = list(
+                scoped_comms.exclude(owner__isnull=True)
+                .values_list("owner_id", flat=True)
+                .distinct()
+            )
+            context["communication_delivery_status_choices"] = DeliveryStatus.choices
+            context["communication_channel_choices"] = CommunicationChannel.choices
+            context["communication_type_choices"] = CommunicationType.choices
+            context["communication_recipient_type_choices"] = RecipientType.choices
+            context["communication_owner_choices"] = UserModel.objects.filter(id__in=owner_ids).order_by(
+                "first_name", "last_name", "username"
+            )
+            context["communication_course_choices"] = Course.objects.filter(
+                enrollments__communications__in=scoped_comms
+            ).distinct().order_by("name")
+            context["communication_filter_values"] = {
+                "status": (self.request.GET.get("status") or "").strip(),
+                "assigned_user": (self.request.GET.get("assigned_user") or "").strip(),
+                "channel": (self.request.GET.get("channel") or "").strip(),
+                "recipient_type": (self.request.GET.get("recipient_type") or "").strip(),
+                "communication_type": (self.request.GET.get("communication_type") or "").strip(),
+                "course": (self.request.GET.get("course") or "").strip(),
+                "created_from": (self.request.GET.get("created_from") or "").strip(),
+                "created_to": (self.request.GET.get("created_to") or "").strip(),
+            }
         if self.model is Prospect and (self.request.user.is_staff or self.request.user.is_superuser):
             selected_state = (self.request.GET.get("state") or "active").strip().lower()
             if selected_state not in {"active", "archived", "converted", "all"}:
@@ -907,8 +1431,7 @@ class CommunicationCreateView(BaseCreateView):
             form.add_error(None, "Selected recipient does not have an email address.")
             return self.form_invalid(form)
 
-        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost")
-        reply_to = [self.request.user.email] if getattr(self.request.user, "email", "") else None
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "rokosun@tm.org")
 
         try:
             email_message = EmailMessage(
@@ -916,7 +1439,6 @@ class CommunicationCreateView(BaseCreateView):
                 body=communication.body,
                 from_email=from_email,
                 to=[recipient_email],
-                reply_to=reply_to or None,
             )
             email_message.send(fail_silently=False)
             communication.delivery_status = DeliveryStatus.SENT
@@ -967,22 +1489,72 @@ class EnrollmentCreateView(BaseCreateView):
 
     def form_valid(self, form):
         person_type = form.cleaned_data.get("person_type")
+        selected_course = form.cleaned_data.get("course")
+        selected_session = form.cleaned_data.get("session")
+        resolved_student = None
 
+        created_invoice = None
         try:
             with transaction.atomic():
                 student = self._resolve_student_for_enrollment(form, person_type=person_type)
+                resolved_student = student
+                if selected_course:
+                    validate_course_eligibility(student, selected_course)
+                if selected_session and Enrollment.objects.filter(
+                    student=student,
+                    session=selected_session,
+                ).exists():
+                    existing_enrollment = Enrollment.objects.filter(
+                        student=student,
+                        session=selected_session,
+                    ).order_by("-pk").first()
+                    messages.info(
+                        self.request,
+                        "This enrollment already exists. Opened the existing record.",
+                    )
+                    return redirect("core:enrollment-detail", pk=existing_enrollment.pk)
                 form.instance.student = student
-                response = super().form_valid(form)
-                generate_invoice_for_enrollment(self.object)
+                super().form_valid(form)
+                created_invoice, _ = generate_invoice_for_enrollment(self.object)
         except ValidationError as exc:
-            form.add_error(None, " ".join(exc.messages))
+            if selected_course:
+                form.add_error("course", " ".join(exc.messages))
+            else:
+                form.add_error(None, " ".join(exc.messages))
             return self.form_invalid(form)
-        except Exception:
-            form.add_error(None, "Unable to create enrollment. Please review the form and try again.")
+        except IntegrityError as exc:
+            if resolved_student:
+                existing_qs = Enrollment.objects.filter(student=resolved_student)
+                if selected_session:
+                    existing_qs = existing_qs.filter(session=selected_session)
+                elif selected_course:
+                    existing_qs = existing_qs.filter(session__course=selected_course)
+
+                existing_enrollment = existing_qs.order_by("-pk").first()
+                if existing_enrollment:
+                    messages.info(
+                        self.request,
+                        "This enrollment already exists. Opened the existing record.",
+                    )
+                    return redirect("core:enrollment-detail", pk=existing_enrollment.pk)
+
+            form.add_error(
+                None,
+                f"Unable to create enrollment due to a data constraint conflict: {exc}",
+            )
+            return self.form_invalid(form)
+        except Exception as exc:
+            form.add_error(None, f"Unable to create enrollment. Please review the form and try again. ({exc})")
             return self.form_invalid(form)
 
-        messages.success(self.request, "Enrollment created and invoice generated successfully.")
-        return response
+        if created_invoice is not None:
+            messages.success(
+                self.request,
+                f"Enrollment completed and invoice {created_invoice.invoice_number} generated successfully.",
+            )
+            return redirect("core:invoice-detail", pk=created_invoice.pk)
+        messages.success(self.request, "Enrollment completed successfully.")
+        return redirect("core:invoice-list")
 
     def _resolve_student_for_enrollment(self, form, *, person_type):
         if person_type == "student":
@@ -1036,6 +1608,17 @@ class EnrollmentUpdateView(BaseUpdateView):
     model = Enrollment
     form_class = EnrollmentForm
     fields = None
+
+
+class InvoiceCreateView(BaseCreateView):
+    model = Invoice
+
+    def dispatch(self, request, *args, **kwargs):
+        messages.info(
+            request,
+            "Invoices are now generated from enrollment submissions. Use the enrollment form to create an invoice.",
+        )
+        return redirect("core:enrollment-create")
 
 
 class PaymentCreateView(BaseCreateView):
@@ -1260,9 +1843,60 @@ class EnrollmentSessionsForCourseView(ProductLoginRequiredMixin, View):
         )
 
 
+class EnrollmentEligibilityCheckView(ProductLoginRequiredMixin, View):
+    def _resolve_person(self, request):
+        person_type = (request.GET.get("person_type") or "").strip().lower()
+        person_id = (request.GET.get("person_id") or "").strip()
+        if not person_id.isdigit():
+            return None
+        pk = int(person_id)
+
+        if person_type == "student":
+            return scope_queryset_for_user(
+                queryset=Student.objects.all(),
+                model=Student,
+                user=request.user,
+            ).filter(pk=pk).first()
+        if person_type == "prospect":
+            return scope_queryset_for_user(
+                queryset=Prospect.objects.select_related("student_record"),
+                model=Prospect,
+                user=request.user,
+            ).filter(pk=pk).first()
+        if person_type == "contact":
+            return scope_queryset_for_user(
+                queryset=Contact.objects.select_related("prospect__student_record"),
+                model=Contact,
+                user=request.user,
+            ).filter(pk=pk).first()
+        return None
+
+    def get(self, request):
+        course_id = (request.GET.get("course_id") or "").strip()
+        if not course_id.isdigit():
+            return JsonResponse({"eligible": True, "missing": [], "message": "Select a course."})
+        course = scope_queryset_for_user(
+            queryset=Course.objects.all(),
+            model=Course,
+            user=request.user,
+        ).filter(pk=int(course_id)).first()
+        if not course:
+            return JsonResponse({"eligible": False, "missing": [], "message": "Selected course was not found."}, status=404)
+
+        person = self._resolve_person(request)
+        result = check_course_eligibility(person, course)
+        return JsonResponse(
+            {
+                "eligible": result.eligible,
+                "missing": result.missing,
+                "message": result.message,
+            }
+        )
+
+
 class StudentCreateView(BaseCreateView):
     model = Student
-    form_class = StudentForm
+    form_class = StudentCreateForm
     fields = None
 
 
@@ -1316,7 +1950,7 @@ class StudentDetailView(BaseDetailView):
                 )
             )
             .annotate(
-                balance_due=ExpressionWrapper(
+                calculated_balance_due=ExpressionWrapper(
                     F("total_amount") - F("amount_paid"),
                     output_field=DecimalField(max_digits=10, decimal_places=2),
                 )
@@ -1337,7 +1971,7 @@ class StudentDetailView(BaseDetailView):
         outstanding_balance = (
             invoices.aggregate(
                 total=Coalesce(
-                    Sum("balance_due"),
+                    Sum("calculated_balance_due"),
                     Value(Decimal("0.00")),
                     output_field=DecimalField(max_digits=12, decimal_places=2),
                 )
@@ -1469,12 +2103,12 @@ class StudentDetailView(BaseDetailView):
                     "title": "Invoice issued",
                     "date": invoice.issue_date,
                     "author": "Finance",
-                    "note": (
-                        f"{invoice.invoice_number} · Balance due "
-                        f"{invoice.balance_due.quantize(Decimal('0.01'))}"
-                    ),
-                }
-            )
+                        "note": (
+                            f"{invoice.invoice_number} · Balance due "
+                            f"{invoice.calculated_balance_due.quantize(Decimal('0.01'))}"
+                        ),
+                    }
+                )
             if invoice.notes:
                 timeline_events.append(
                     {
@@ -1508,7 +2142,7 @@ class StudentDetailView(BaseDetailView):
         primary_teacher = student.teacher or (
             latest_enrollment.session.teacher if latest_enrollment else None
         )
-        overdue_exists = invoices.filter(balance_due__gt=0, due_date__lt=today).exists()
+        overdue_exists = invoices.filter(calculated_balance_due__gt=0, due_date__lt=today).exists()
         if not invoices.exists():
             payment_status = "No Invoices"
             payment_status_class = "sp-chip-soft"
@@ -1607,25 +2241,12 @@ class InvoiceDetailView(BaseDetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         invoice = self.object
-        total_paid = (
-            invoice.payments.aggregate(
-                total=Coalesce(
-                    Sum("amount_paid"),
-                    Value(Decimal("0.00")),
-                    output_field=DecimalField(max_digits=12, decimal_places=2),
-                )
-            )["total"]
-            or Decimal("0.00")
-        )
-        outstanding_balance = (invoice.total_amount or Decimal("0.00")) - total_paid
-        if outstanding_balance < Decimal("0.00"):
-            outstanding_balance = Decimal("0.00")
-
         context["invoice_student"] = invoice.enrollment.student
         context["payments"] = invoice.payments.order_by("-payment_date", "-pk")
-        context["total_paid"] = total_paid
-        context["outstanding_balance"] = outstanding_balance
-        context["can_add_payment"] = outstanding_balance > Decimal("0.00")
+        context["total_paid"] = invoice.total_paid
+        context["outstanding_balance"] = invoice.balance_due
+        context["payment_status"] = invoice.payment_status
+        context["can_add_payment"] = invoice.balance_due > Decimal("0.00")
         return context
 
 

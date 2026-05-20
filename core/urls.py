@@ -79,9 +79,19 @@ urlpatterns = [
         name="enrollment-sessions-for-course",
     ),
     path(
+        "enrollments/check-eligibility/",
+        views.EnrollmentEligibilityCheckView.as_view(),
+        name="enrollment-check-eligibility",
+    ),
+    path(
         "contacts/autocomplete/",
         views.ContactAutocompleteView.as_view(),
         name="contact-autocomplete",
+    ),
+    path(
+        "communications/bulk-send/",
+        views.bulk_message_send_view,
+        name="communication-bulk-send",
     ),
 ]
 

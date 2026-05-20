@@ -158,7 +158,7 @@
             <tbody>
               {% if invoices %}
                 {% for invoice in invoices %}
-                  <tr class="{% if invoice.balance_due > 0 and invoice.due_date and invoice.due_date < today %}sp-row-overdue{% elif invoice.balance_due > 0 %}sp-row-partial{% endif %}">
+                  <tr class="{% if invoice.calculated_balance_due > 0 and invoice.due_date and invoice.due_date < today %}sp-row-overdue{% elif invoice.calculated_balance_due > 0 %}sp-row-partial{% endif %}">
                     <td>
                       <a class="sp-invoice-link" href="{% url 'core:invoice-detail' invoice.pk %}">
                         {{ invoice.invoice_number }}
@@ -167,11 +167,11 @@
                     <td>{{ invoice.issue_date|date:"M d, Y" }}</td>
                     <td>${{ invoice.amount_paid|floatformat:2 }}</td>
                     <td>
-                      <span class="sp-chip {% if invoice.balance_due > 0 and invoice.due_date and invoice.due_date < today %}sp-chip-overdue{% elif invoice.balance_due > 0 %}sp-chip-partial{% endif %}">
+                      <span class="sp-chip {% if invoice.calculated_balance_due > 0 and invoice.due_date and invoice.due_date < today %}sp-chip-overdue{% elif invoice.calculated_balance_due > 0 %}sp-chip-partial{% endif %}">
                         {{ invoice.get_status_display|default:invoice.status }}
                       </span>
                     </td>
-                    <td>${{ invoice.balance_due|floatformat:2 }}</td>
+                    <td>${{ invoice.calculated_balance_due|floatformat:2 }}</td>
                   </tr>
                 {% endfor %}
               {% else %}

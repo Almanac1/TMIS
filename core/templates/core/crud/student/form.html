@@ -1,1 +1,139 @@
-{% extends "core/crud/model_form.html" %}
+{% extends "core/crud/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% if object %}Edit{% else %}Create{% endif %} Student{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">{% if object %}Edit{% else %}Create{% endif %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h1 class="h3 mb-1">{% if object %}Edit{% else %}Create{% endif %} Student</h1>
+    <p class="text-muted mb-0">Create a student from an existing person or a brand-new prospect.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to Students</a>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4">
+  <div class="card-body p-4">
+    {% crispy form %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .enroll-step-card {
+    transition: box-shadow .2s ease, transform .2s ease;
+  }
+  .enroll-step-card:hover {
+    box-shadow: 0 .5rem 1rem rgba(17, 24, 39, .08);
+    transform: translateY(-1px);
+  }
+  .enroll-step-kicker {
+    color: #6d7485;
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    font-weight: 700;
+    margin-bottom: .25rem;
+  }
+  .enroll-step-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+  }
+  .sticky-action-bar {
+    position: sticky;
+    bottom: 0;
+    background: rgba(255, 255, 255, .95);
+    backdrop-filter: saturate(130%) blur(2px);
+    border-top: 1px solid #eceef3;
+    padding: .9rem 0 0;
+    z-index: 50;
+  }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const personType = document.getElementById("id_person_type");
+    const searchWrap = document.getElementById("search-step-wrap");
+    const newProspectWrap = document.getElementById("new-prospect-wrap");
+    const searchInput = document.getElementById("entity-search-input");
+    const searchResults = document.getElementById("entity-search-results");
+    const selectedPerson = document.getElementById("selected-person");
+    const hiddenStudent = document.getElementById("id_student");
+    const hiddenProspect = document.getElementById("id_prospect");
+    const hiddenContact = document.getElementById("id_contact");
+    const searchUrl = "{% url 'core:enrollment-person-search' %}";
+
+    if (!personType || !searchWrap || !newProspectWrap) return;
+
+    function setPersonSelection(field, id, label, badge) {
+      hiddenStudent.value = "";
+      hiddenProspect.value = "";
+      hiddenContact.value = "";
+      field.value = id;
+      selectedPerson.classList.remove("d-none");
+      selectedPerson.textContent = `${label} — ${badge}`;
+    }
+
+    function updatePersonSections() {
+      const value = personType.value;
+      const searchEnabled = value === "student" || value === "prospect" || value === "contact";
+      searchWrap.classList.toggle("d-none", !searchEnabled);
+      newProspectWrap.classList.toggle("d-none", value !== "new_prospect");
+      if (!searchEnabled) {
+        searchResults.innerHTML = "";
+        selectedPerson.classList.add("d-none");
+      }
+    }
+
+    let timer = null;
+    async function performSearch() {
+      const value = personType.value;
+      const q = (searchInput.value || "").trim();
+      if (q.length < 2) {
+        searchResults.innerHTML = "";
+        return;
+      }
+      const params = new URLSearchParams({ type: value, q });
+      searchResults.innerHTML = '<div class="list-group-item text-muted">Searching...</div>';
+      const response = await fetch(`${searchUrl}?${params.toString()}`, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+      const payload = await response.json();
+      const items = payload.results || [];
+      if (!items.length) {
+        searchResults.innerHTML = '<div class="list-group-item text-muted">No matches found.</div>';
+        return;
+      }
+      searchResults.innerHTML = "";
+      items.forEach((item) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "list-group-item list-group-item-action";
+        btn.textContent = `${item.label} — ${item.badge}${item.meta ? ` (${item.meta})` : ""}`;
+        btn.addEventListener("click", function () {
+          if (value === "student") setPersonSelection(hiddenStudent, item.id, item.label, item.badge);
+          if (value === "prospect") setPersonSelection(hiddenProspect, item.id, item.label, item.badge);
+          if (value === "contact") setPersonSelection(hiddenContact, item.id, item.label, item.badge);
+          searchResults.innerHTML = "";
+        });
+        searchResults.appendChild(btn);
+      });
+    }
+
+    personType.addEventListener("change", updatePersonSections);
+    if (searchInput) {
+      searchInput.addEventListener("input", function () {
+        clearTimeout(timer);
+        timer = setTimeout(performSearch, 250);
+      });
+    }
+
+    updatePersonSections();
+  })();
+</script>
+{% endblock %}
