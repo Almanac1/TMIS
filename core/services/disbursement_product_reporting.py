@@ -39,7 +39,7 @@ def get_disbursement_reporting_data(*, start_date, end_date, report_by, teacher=
         )
         .annotate(
             row_total=Sum(amount_field),
-            disbursement_count=Count("id"),
+            disbursement_count=Count("pk"),
         )
         .order_by("-disbursement_date", "teacher__first_name", "location__name")
     )

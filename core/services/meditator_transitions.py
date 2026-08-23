@@ -19,6 +19,7 @@ from core.models import (
     MeditatorTransitionEvent,
     MeditatorTransitionEventType,
     MeditatorTransitionTrigger,
+    ProspectStatus,
     RecipientType,
     SessionStatus,
     Student,
@@ -164,6 +165,15 @@ def evaluate_student_meditator_eligibility(student: Student) -> MeditatorEligibi
 def ensure_meditator_transition_for_student(student: Student) -> Meditator | None:
     if not student or not student.pk:
         return None
+    prospect = student.prospect
+    if (
+        student.enrollment_status == EnrollmentStatus.INACTIVE
+        or prospect.status != ProspectStatus.CONVERTED
+        or not prospect.converted_to_student
+        or prospect.converted_student_id != student.pk
+        or prospect.converted_at is None
+    ):
+        return None
 
     eligibility = evaluate_student_meditator_eligibility(student)
     if not eligibility.eligible:
@@ -188,11 +198,17 @@ def ensure_meditator_transition_for_student(student: Student) -> Meditator | Non
                 "intro_completed_on": intro_dt,
                 "day20_completed_on": day20_dt,
                 "metadata": metadata,
+                "is_active": True,
             },
         )
 
         if not created:
             fields_to_update = []
+            integrity_invalidations = (meditator.metadata or {}).get(
+                "integrity_invalidations"
+            )
+            if integrity_invalidations:
+                metadata["integrity_invalidations"] = integrity_invalidations
             if meditator.intro_completed_on != intro_dt:
                 meditator.intro_completed_on = intro_dt
                 fields_to_update.append("intro_completed_on")
@@ -205,6 +221,13 @@ def ensure_meditator_transition_for_student(student: Student) -> Meditator | Non
             if meditator.metadata != metadata:
                 meditator.metadata = metadata
                 fields_to_update.append("metadata")
+            if not meditator.is_active:
+                meditator.is_active = True
+                meditator.invalidated_at = None
+                meditator.invalidation_reason = ""
+                fields_to_update.extend(
+                    ["is_active", "invalidated_at", "invalidation_reason"]
+                )
             if fields_to_update:
                 meditator.save(update_fields=fields_to_update + ["updated_at"])
 
@@ -354,7 +377,10 @@ def backfill_fictitious_meditator_transitions(target_ratio: float = 0.30) -> dic
                 transitioned += 1
 
     minimum_target = max(1, int(round(len(students) * target_ratio)))
-    current_meditators = Meditator.objects.filter(student__in=students).count()
+    current_meditators = Meditator.objects.filter(
+        student__in=students,
+        is_active=True,
+    ).count()
     promoted_for_target = 0
 
     if current_meditators < minimum_target:
@@ -362,7 +388,7 @@ def backfill_fictitious_meditator_transitions(target_ratio: float = 0.30) -> dic
         candidates = [
             student
             for student in students
-            if not hasattr(student, "meditator_profile")
+            if not Meditator.objects.filter(student=student, is_active=True).exists()
         ]
         now = timezone.now()
 

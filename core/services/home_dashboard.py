@@ -96,7 +96,7 @@ def _build_student_check_in_reminders(*, user, today):
             model=Student,
             user=user,
         )
-        .select_related("prospect", "prospect__contact")
+        .select_related("prospect", "prospect__contact", "teacher", "owner")
         .annotate(check_in_anchor_dt=Subquery(intro_enrollment_subquery))
         .exclude(check_in_anchor_dt__isnull=True)
     )
@@ -198,7 +198,7 @@ def get_home_dashboard_data(*, user):
         prospects.filter(created_at__date__gte=month_start_floor)
         .annotate(month=TruncMonth("created_at"))
         .values("month")
-        .annotate(total=Count("id"))
+        .annotate(total=Count("pk"))
         .order_by("month")
     )
     conversion_rows = (
@@ -208,7 +208,7 @@ def get_home_dashboard_data(*, user):
         )
         .annotate(month=TruncMonth("created_at"))
         .values("month")
-        .annotate(total=Count("id"))
+        .annotate(total=Count("pk"))
         .order_by("month")
     )
     lead_map = _month_series_map(lead_rows, "total")
@@ -368,8 +368,8 @@ def get_home_dashboard_data(*, user):
     source_rows = (
         prospects.values("source")
         .annotate(
-            total=Count("id"),
-            converted=Count("id", filter=Q(student_record__isnull=False)),
+            total=Count("pk"),
+            converted=Count("pk", filter=Q(student_record__isnull=False)),
         )
         .order_by("-total")[:8]
     )

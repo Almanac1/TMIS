@@ -34,11 +34,13 @@
         <tbody>
           {% for obj in object_list %}
           <tr>
-            <td class="invoice-no text-nowrap fw-semibold">{{ obj.invoice_number }}</td>
+            <td class="invoice-no text-nowrap fw-semibold">
+              <a href="{% url detail_url_name obj.pk %}" class="link-primary">{{ obj.invoice_number }}</a>
+            </td>
             <td>{{ obj.enrollment.student.prospect|default:obj.enrollment.student|default:"-" }}</td>
-            <td class="text-end">${{ obj.total_amount|floatformat:2 }}</td>
-            <td class="text-end">${{ obj.total_paid|floatformat:2 }}</td>
-            <td class="text-end">${{ obj.balance_due|floatformat:2 }}</td>
+            <td class="text-end">GHS {{ obj.total_amount|floatformat:2 }}</td>
+            <td class="text-end">GHS {{ obj.total_paid|floatformat:2 }}</td>
+            <td class="text-end">GHS {{ obj.balance_due|floatformat:2 }}</td>
             <td>
               {% if obj.payment_status == "Paid" %}
                 <span class="badge text-bg-success">Paid</span>

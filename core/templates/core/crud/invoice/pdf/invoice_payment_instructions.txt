@@ -1,0 +1,3 @@
+Please make payment to the official TM center account listed by your coordinator.
+Include invoice number {{ invoice.invoice_number }} as your payment reference.
+For support, contact the TMIS admin team at the center office.

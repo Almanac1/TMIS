@@ -24,13 +24,17 @@
       </div>
     </div>
     <div class="prospect-action-group" aria-label="Prospect actions">
-      {% if not has_student_record %}
+      {% if is_converted and has_student_record %}
+        <a class="btn prospect-btn prospect-btn-primary" href="{% url 'core:student-detail' object.student_record.pk %}">Open Student</a>
+      {% elif conversion_eligibility.eligible %}
         <form method="post" action="{% url 'core:prospect-convert-to-student' object.pk %}" class="m-0">
           {% csrf_token %}
           <button type="submit" class="btn prospect-btn prospect-btn-primary">Convert to Student</button>
         </form>
       {% else %}
-        <a class="btn prospect-btn prospect-btn-primary" href="{% url 'core:student-detail' object.student_record.pk %}">Open Student</a>
+        <span class="d-inline-block" tabindex="0" title="{{ conversion_eligibility.message }}">
+          <button type="button" class="btn prospect-btn prospect-btn-neutral" disabled aria-disabled="true">Invoice/payment required</button>
+        </span>
       {% endif %}
       <a class="btn prospect-btn prospect-btn-secondary" href="{% url update_url_name object.pk %}">Edit</a>
       <a class="btn prospect-btn prospect-btn-neutral" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
@@ -103,7 +107,7 @@
         <h2 class="prospect-card-title">Follow-up Status</h2>
         <dl class="prospect-kv-list">
           <div><dt>Contact Attempts</dt><dd>{{ contact_attempt_count }}</dd></div>
-          <div><dt>Converted</dt><dd>{% if has_student_record %}Yes{% else %}No{% endif %}</dd></div>
+          <div><dt>Converted</dt><dd>{% if is_converted %}Yes{% else %}No{% endif %}</dd></div>
           <div><dt>Notes</dt><dd>{{ object.notes|default:"No notes yet." }}</dd></div>
         </dl>
       </section>
@@ -114,13 +118,17 @@
         <h2 class="prospect-card-title">Next Actions</h2>
         <div class="d-grid gap-2">
           <a class="btn prospect-btn prospect-btn-secondary" href="{% url update_url_name object.pk %}">Update Prospect Details</a>
-          {% if not has_student_record %}
+          {% if is_converted and has_student_record %}
+            <a class="btn prospect-btn prospect-btn-primary" href="{% url 'core:student-detail' object.student_record.pk %}">Open Student Record</a>
+          {% elif conversion_eligibility.eligible %}
             <form method="post" action="{% url 'core:prospect-convert-to-student' object.pk %}" class="m-0">
               {% csrf_token %}
               <button type="submit" class="btn prospect-btn prospect-btn-primary w-100">Convert to Student</button>
             </form>
           {% else %}
-            <a class="btn prospect-btn prospect-btn-primary" href="{% url 'core:student-detail' object.student_record.pk %}">Open Student Record</a>
+            <span class="d-inline-block" tabindex="0" title="{{ conversion_eligibility.message }}">
+              <button type="button" class="btn prospect-btn prospect-btn-neutral w-100" disabled aria-disabled="true">Invoice/payment required</button>
+            </span>
           {% endif %}
           <a class="btn prospect-btn prospect-btn-neutral" href="{% url 'core:communication-create' %}?recipient_type=prospect&prospect={{ object.pk }}">Log Follow-up Communication</a>
         </div>

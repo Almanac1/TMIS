@@ -19,17 +19,17 @@ urlpatterns = [
         name="prospect-pipeline-list",
     ),
     path(
-        "pipeline/prospects/<int:pk>/",
+        "pipeline/prospects/<str:pk>/",
         views.ProspectPipelineDetailView.as_view(),
         name="prospect-pipeline-detail",
     ),
     path(
-        "pipeline/prospects/<int:pk>/convert/",
+        "pipeline/prospects/<str:pk>/convert/",
         views.ProspectConvertToStudentView.as_view(),
         name="prospect-pipeline-convert",
     ),
     path(
-        "pipeline/prospects/<int:pk>/follow-up/",
+        "pipeline/prospects/<str:pk>/follow-up/",
         views.ProspectFollowUpCreateView.as_view(),
         name="prospect-pipeline-follow-up",
     ),
@@ -44,7 +44,7 @@ urlpatterns = [
         name="disbursement-reporting",
     ),
     path(
-        "students/<int:pk>/archive/",
+        "students/<str:pk>/archive/",
         views.StudentArchiveView.as_view(),
         name="student-archive",
     ),
@@ -54,12 +54,22 @@ urlpatterns = [
         name="add_invoice_payment",
     ),
     path(
-        "contacts/<int:pk>/convert-to-prospect/",
+        "invoices/<int:pk>/download-pdf/",
+        views.download_invoice_pdf,
+        name="invoice-download-pdf",
+    ),
+    path(
+        "invoices/<int:pk>/resend-email/",
+        views.resend_invoice_email,
+        name="invoice-resend-email",
+    ),
+    path(
+        "contacts/<str:pk>/convert-to-prospect/",
         views.ContactConvertToProspectView.as_view(),
         name="contact-convert-to-prospect",
     ),
     path(
-        "prospects/<int:pk>/convert-to-student/",
+        "prospects/<str:pk>/convert-to-student/",
         views.ProspectListConvertToStudentView.as_view(),
         name="prospect-convert-to-student",
     ),
@@ -67,6 +77,11 @@ urlpatterns = [
         "payments/invoices-for-student/<int:student_id>/",
         views.PaymentInvoicesForStudentView.as_view(),
         name="payment-invoices-for-student",
+    ),
+    path(
+        "payments/student-search/",
+        views.PaymentStudentSearchView.as_view(),
+        name="payment-student-search",
     ),
     path(
         "enrollments/person-search/",
@@ -126,12 +141,12 @@ for model in views.CRUD_MODELS:
             name=f"{slug}-create",
         ),
         path(
-            f"{collection}/<int:pk>/",
+            f"{collection}/<str:pk>/",
             getattr(views, f"{model_name}DetailView").as_view(),
             name=f"{slug}-detail",
         ),
         path(
-            f"{collection}/<int:pk>/edit/",
+            f"{collection}/<str:pk>/edit/",
             getattr(views, f"{model_name}UpdateView").as_view(),
             name=f"{slug}-update",
         ),
@@ -139,7 +154,7 @@ for model in views.CRUD_MODELS:
     if model_ui_options["allow_delete"]:
         model_patterns.append(
             path(
-                f"{collection}/<int:pk>/delete/",
+                f"{collection}/<str:pk>/delete/",
                 getattr(views, f"{model_name}DeleteView").as_view(),
                 name=f"{slug}-delete",
             )

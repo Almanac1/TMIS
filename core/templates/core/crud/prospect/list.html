@@ -131,6 +131,7 @@
             <th class="text-center" style="width:38px;">
               <input type="checkbox" class="form-check-input" data-bulk-select-all aria-label="Select displayed prospects" title="Select displayed results">
             </th>
+            <th>ID</th>
             <th>{{ model_name }}</th>
             <th>Source</th>
             <th>Status</th>
@@ -142,8 +143,9 @@
           {% for obj in object_list %}
           <tr>
             <td class="text-center">
-              <input type="checkbox" class="form-check-input" data-bulk-row-select value="{{ obj.id }}" aria-label="Select prospect {{ obj }}">
+              <input type="checkbox" class="form-check-input" data-bulk-row-select value="{{ obj.pk }}" aria-label="Select prospect {{ obj }}">
             </td>
+            <td class="text-nowrap">{{ obj.public_id }}</td>
             <td>
               <a href="{% url detail_url_name obj.pk %}" class="link-primary fw-semibold">{{ obj }}</a>
             </td>
@@ -169,17 +171,23 @@
                     <button type="button" class="btn btn-sm btn-outline-success" disabled>Converted to Student</button>
                   {% endif %}
                 {% else %}
-                  <form method="post" action="{% url 'core:prospect-convert-to-student' obj.pk %}" class="d-inline">
-                    {% csrf_token %}
-                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                    <button type="submit" class="btn btn-sm btn-outline-success">Convert to Student</button>
-                  </form>
+                  {% if obj.student_conversion_eligible %}
+                    <form method="post" action="{% url 'core:prospect-convert-to-student' obj.pk %}" class="d-inline">
+                      {% csrf_token %}
+                      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                      <button type="submit" class="btn btn-sm btn-outline-success">Convert to Student</button>
+                    </form>
+                  {% else %}
+                    <span class="d-inline-block" tabindex="0" title="{{ obj.student_conversion_block_message }}">
+                      <button type="button" class="btn btn-sm btn-outline-secondary" disabled aria-disabled="true">Invoice/payment required</button>
+                    </span>
+                  {% endif %}
                 {% endif %}
               </div>
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="6" class="empty-state"><strong>{% if search_query %}No prospects found for this search.{% else %}No records found.{% endif %}</strong></td></tr>
+          <tr><td colspan="7" class="empty-state"><strong>{% if search_query %}No prospects found for this search.{% else %}No records found.{% endif %}</strong></td></tr>
           {% endfor %}
         </tbody>
       </table>

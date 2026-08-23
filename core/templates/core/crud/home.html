@@ -80,26 +80,179 @@
     margin: 0;
   }
   .reminder-list {
-    display: grid;
-    gap: 0.5rem;
+    border-top: 1px solid var(--crm-border);
   }
-  .reminder-item {
-    border: 1px solid var(--crm-border);
-    border-radius: 10px;
-    padding: 0.65rem 0.75rem;
-    background: #fff;
+  .reminder-panel-head {
+    margin-bottom: 1rem;
   }
-  .reminder-meta {
+  .reminder-panel-head .chart-title {
+    font-size: 1.05rem;
+  }
+  .reminder-helper {
     color: var(--crm-muted);
-    font-size: 0.84rem;
-  }
-  .overdue-badge {
     font-size: 0.76rem;
-    font-weight: 600;
+    margin-top: 0.2rem;
+  }
+  .reminder-column + .reminder-column {
+    border-left: 1px solid var(--crm-border);
+  }
+  .reminder-section-head {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 32px;
+    margin-bottom: 0.35rem;
+  }
+  .reminder-section-title {
+    color: var(--crm-text);
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin: 0;
+  }
+  .reminder-count {
+    min-width: 1.6rem;
+    padding: 0.15rem 0.45rem;
     border-radius: 999px;
-    padding: 0.2rem 0.55rem;
-    background: #fff3cd;
-    color: #7a5a00;
+    background: var(--crm-primary-soft);
+    border: 1px solid #e5d9e9;
+    color: var(--crm-primary);
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+  }
+  .reminder-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 62px;
+    padding: 0.55rem 0.35rem;
+    border-bottom: 1px solid #f0f1f5;
+    color: inherit;
+    text-decoration: none;
+    transition: background-color 0.15s ease;
+  }
+  .reminder-row:hover,
+  .reminder-row:focus-visible {
+    background: #faf8fb;
+    color: inherit;
+  }
+  .reminder-row:focus-visible {
+    outline: 2px solid rgba(70, 40, 80, 0.22);
+    outline-offset: -2px;
+    border-radius: 6px;
+  }
+  .reminder-person {
+    min-width: 0;
+  }
+  .reminder-student-name {
+    display: block;
+    color: var(--crm-text);
+    font-size: 0.88rem;
+    font-weight: 700;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .reminder-owner {
+    display: block;
+    color: var(--crm-muted);
+    font-size: 0.74rem;
+    line-height: 1.3;
+    margin-top: 0.12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .reminder-schedule {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.45rem;
+    white-space: nowrap;
+  }
+  .reminder-day,
+  .reminder-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 0.64rem;
+    font-weight: 750;
+    letter-spacing: 0.045em;
+    line-height: 1;
+    padding: 0.3rem 0.48rem;
+    text-transform: uppercase;
+  }
+  .reminder-day.day-3 {
+    background: #f7f2f9;
+    border-color: #eadfec;
+    color: #775482;
+  }
+  .reminder-day.day-10 {
+    background: #f1ebf3;
+    border-color: #dfd2e4;
+    color: #603c6b;
+  }
+  .reminder-day.day-20 {
+    background: #e9dfed;
+    border-color: #d7c5de;
+    color: var(--crm-primary);
+  }
+  .reminder-date {
+    color: var(--crm-muted);
+    font-size: 0.72rem;
+  }
+  .reminder-status.is-today {
+    background: var(--crm-primary-soft);
+    border-color: #dfd2e4;
+    color: var(--crm-primary);
+  }
+  .reminder-status.is-overdue {
+    background: #fff8e8;
+    border-color: #f0ddb0;
+    color: #80601a;
+  }
+  .reminder-view-all {
+    border: 0;
+    background: transparent;
+    color: var(--crm-primary);
+    font-size: 0.76rem;
+    font-weight: 650;
+    margin-top: 0.45rem;
+    padding: 0.25rem 0.35rem;
+  }
+  .reminder-view-all:hover,
+  .reminder-view-all:focus {
+    color: var(--crm-primary-strong);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  @media (max-width: 991.98px) {
+    .reminder-column + .reminder-column {
+      border-left: 0;
+      border-top: 1px solid var(--crm-border);
+      margin-top: 0.7rem;
+      padding-top: 0.7rem;
+    }
+  }
+  @media (max-width: 575.98px) {
+    .reminder-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.35rem 0.55rem;
+      min-height: 66px;
+    }
+    .reminder-schedule {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+    }
+    .reminder-status {
+      grid-column: 2;
+      grid-row: 1;
+    }
   }
 </style>
 {% endblock %}
@@ -142,62 +295,83 @@
     <div class="card kpi-card h-100">
       <div class="card-body">
         <div class="kpi-label">Outstanding Amount</div>
-        <div class="kpi-value">${{ dashboard.kpis.outstanding_amount|floatformat:2 }}</div>
+        <div class="kpi-value">GHS {{ dashboard.kpis.outstanding_amount|floatformat:2 }}</div>
       </div>
     </div>
   </div>
 </div>
 
-<div class="card chart-card mb-4">
-  <div class="card-body">
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-      <div>
-        <h2 class="chart-title">Student Check-in Reminders</h2>
-        <div class="chart-sub">{{ dashboard.check_in_reminders.anchor_description }}</div>
-      </div>
+<div class="card chart-card mb-4" id="student-check-in-reminders">
+  <div class="card-body py-3">
+    <div class="reminder-panel-head">
+      <h2 class="chart-title">Student Check-in Reminders</h2>
+      <div class="reminder-helper">{{ dashboard.check_in_reminders.anchor_description }}</div>
     </div>
-    <div class="row g-3">
-      <div class="col-12 col-lg-6">
-        <h3 class="h6 mb-2">Due Today (Day 3 / Day 10 / Day 20)</h3>
+    <div class="row g-0">
+      <section class="col-12 col-lg-6 pe-lg-3 reminder-column" aria-labelledby="due-today-heading">
+        <div class="reminder-section-head">
+          <h3 class="reminder-section-title" id="due-today-heading">Due Today</h3>
+          <span class="reminder-count" aria-label="{{ dashboard.check_in_reminders.due_today|length }} reminders due today">{{ dashboard.check_in_reminders.due_today|length }}</span>
+        </div>
         {% if dashboard.check_in_reminders.due_today %}
-          <div class="reminder-list">
+          <div class="reminder-list" id="due-reminders">
             {% for reminder in dashboard.check_in_reminders.due_today %}
-              <div class="reminder-item">
-                <div class="fw-semibold">
-                  <a href="{% url 'core:student-detail' reminder.student.pk %}" class="link-body-emphasis text-decoration-none">
-                    {{ reminder.student }}
-                  </a>
-                </div>
-                <div class="reminder-meta">{{ reminder.day_label }} · Due {{ reminder.due_date }}</div>
-              </div>
+              <a href="{% url 'core:student-detail' reminder.student.pk %}" class="reminder-row{% if forloop.counter > 5 %} d-none reminder-extra{% endif %}">
+                <span class="reminder-person">
+                  <span class="reminder-student-name">{{ reminder.student.prospect }}</span>
+                  <span class="reminder-owner">
+                    {% if reminder.student.teacher %}{{ reminder.student.teacher }}{% elif reminder.student.owner %}{{ reminder.student.owner.get_full_name|default:reminder.student.owner.username }}{% else %}Unassigned{% endif %}
+                  </span>
+                </span>
+                <span class="reminder-schedule">
+                  <span class="reminder-day {% if reminder.day_label == 'Day 3' %}day-3{% elif reminder.day_label == 'Day 10' %}day-10{% else %}day-20{% endif %}">{{ reminder.day_label }}</span>
+                  <span class="reminder-date">Due {{ reminder.due_date|date:"M j" }}</span>
+                </span>
+                <span class="reminder-status is-today">Today</span>
+              </a>
             {% endfor %}
           </div>
+          {% if dashboard.check_in_reminders.due_today|length > 5 %}
+            <button class="reminder-view-all" type="button" data-reminder-toggle="due-reminders" aria-expanded="false">
+              View all {{ dashboard.check_in_reminders.due_today|length }} reminders
+            </button>
+          {% endif %}
         {% else %}
-          <p class="preview-empty">No check-ins due today.</p>
+          <p class="preview-empty py-2">No check-ins due today.</p>
         {% endif %}
-      </div>
-      <div class="col-12 col-lg-6">
-        <h3 class="h6 mb-2">Missed Check-ins</h3>
+      </section>
+      <section class="col-12 col-lg-6 ps-lg-3 reminder-column" aria-labelledby="missed-checkins-heading">
+        <div class="reminder-section-head">
+          <h3 class="reminder-section-title" id="missed-checkins-heading">Missed Check-ins</h3>
+          <span class="reminder-count" aria-label="{{ dashboard.check_in_reminders.overdue|length }} missed reminders">{{ dashboard.check_in_reminders.overdue|length }}</span>
+        </div>
         {% if dashboard.check_in_reminders.overdue %}
-          <div class="reminder-list">
+          <div class="reminder-list" id="overdue-reminders">
             {% for reminder in dashboard.check_in_reminders.overdue %}
-              <div class="reminder-item d-flex justify-content-between align-items-start gap-2">
-                <div>
-                  <div class="fw-semibold">
-                    <a href="{% url 'core:student-detail' reminder.student.pk %}" class="link-body-emphasis text-decoration-none">
-                      {{ reminder.student }}
-                    </a>
-                  </div>
-                  <div class="reminder-meta">{{ reminder.day_label }} · Was due {{ reminder.due_date }}</div>
-                </div>
-                <span class="overdue-badge">{{ reminder.days_overdue }} day{{ reminder.days_overdue|pluralize }} overdue</span>
-              </div>
+              <a href="{% url 'core:student-detail' reminder.student.pk %}" class="reminder-row{% if forloop.counter > 5 %} d-none reminder-extra{% endif %}">
+                <span class="reminder-person">
+                  <span class="reminder-student-name">{{ reminder.student.prospect }}</span>
+                  <span class="reminder-owner">
+                    {% if reminder.student.teacher %}{{ reminder.student.teacher }}{% elif reminder.student.owner %}{{ reminder.student.owner.get_full_name|default:reminder.student.owner.username }}{% else %}Unassigned{% endif %}
+                  </span>
+                </span>
+                <span class="reminder-schedule">
+                  <span class="reminder-day {% if reminder.day_label == 'Day 3' %}day-3{% elif reminder.day_label == 'Day 10' %}day-10{% else %}day-20{% endif %}">{{ reminder.day_label }}</span>
+                  <span class="reminder-date">Due {{ reminder.due_date|date:"M j" }}</span>
+                </span>
+                <span class="reminder-status is-overdue">{{ reminder.days_overdue }} day{{ reminder.days_overdue|pluralize }} overdue</span>
+              </a>
             {% endfor %}
           </div>
+          {% if dashboard.check_in_reminders.overdue|length > 5 %}
+            <button class="reminder-view-all" type="button" data-reminder-toggle="overdue-reminders" aria-expanded="false">
+              View all {{ dashboard.check_in_reminders.overdue|length }} reminders
+            </button>
+          {% endif %}
         {% else %}
-          <p class="preview-empty">No missed check-ins.</p>
+          <p class="preview-empty py-2">No missed check-ins.</p>
         {% endif %}
-      </div>
+      </section>
     </div>
   </div>
 </div>
@@ -382,9 +556,9 @@
       <div class="card-body">
         <h2 class="chart-title">Revenue Snapshot</h2>
         <div class="chart-sub mb-3">
-          Invoiced: ${{ dashboard.kpis.invoiced_total|floatformat:2 }} ·
-          Collected: ${{ dashboard.kpis.collected_total|floatformat:2 }} ·
-          Overdue: ${{ dashboard.kpis.overdue_total|floatformat:2 }}
+          Invoiced: GHS {{ dashboard.kpis.invoiced_total|floatformat:2 }} ·
+          Collected: GHS {{ dashboard.kpis.collected_total|floatformat:2 }} ·
+          Overdue: GHS {{ dashboard.kpis.overdue_total|floatformat:2 }}
         </div>
         <div class="chart-wrap lg"><canvas id="revenueAgingChart"></canvas></div>
       </div>
@@ -428,6 +602,20 @@
 
 {% block extra_js %}
 <script>
+  document.querySelectorAll("[data-reminder-toggle]").forEach((button) => {
+    const list = document.getElementById(button.dataset.reminderToggle);
+    if (!list) return;
+    const collapsedLabel = button.textContent.trim();
+    button.addEventListener("click", function () {
+      const isExpanded = button.getAttribute("aria-expanded") === "true";
+      list.querySelectorAll(".reminder-extra").forEach((row) => {
+        row.classList.toggle("d-none", isExpanded);
+      });
+      button.setAttribute("aria-expanded", String(!isExpanded));
+      button.textContent = isExpanded ? collapsedLabel : "Show fewer reminders";
+    });
+  });
+
   const chartsNode = document.getElementById("home-dashboard-charts");
   const chartPayload = chartsNode ? JSON.parse(chartsNode.textContent) : {};
 
@@ -568,7 +756,7 @@
     data: {
       labels: chartPayload.revenue_aging?.labels || [],
       datasets: [{
-        label: "Outstanding ($)",
+        label: "Outstanding (GHS)",
         data: numericSeries(chartPayload.revenue_aging?.values),
         backgroundColor: ["#70a1ff", "#f7b267", "#de6b48"],
         borderRadius: 8,

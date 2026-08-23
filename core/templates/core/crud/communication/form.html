@@ -30,8 +30,19 @@
         </div>
       </div>
       {% endif %}
+      <div class="alert alert-light border mb-3">
+        <div class="fw-semibold mb-1">Send Preview</div>
+        <div>Sender: {{ recipient_sender_email|default:"-" }}</div>
+        <div>Recipients selected: {{ recipient_preview_count|default:"1" }}</div>
+        {% if recipient_invalid_tokens %}
+          <div class="text-warning">Invalid/skipped recipients: {{ recipient_invalid_tokens|length }}</div>
+        {% endif %}
+      </div>
       <form method="post" novalidate>
         {% csrf_token %}
+        {% if recipients_payload %}
+          <input type="hidden" name="recipients" value="{{ recipients_payload }}">
+        {% endif %}
 
         {% if form.non_field_errors %}
           <div class="alert alert-danger">{{ form.non_field_errors }}</div>
@@ -49,14 +60,15 @@
         <div class="row g-3 mb-3">
           <div class="col-md-4">{{ form.channel.label_tag }} {{ form.channel }}</div>
           <div class="col-md-4">{{ form.communication_type.label_tag }} {{ form.communication_type }}</div>
-          <div class="col-md-4">{{ form.delivery_status.label_tag }} {{ form.delivery_status }}</div>
           <div class="col-12">{{ form.subject.label_tag }} {{ form.subject }}{% if form.subject.help_text %}<div class="form-text">{{ form.subject.help_text }}</div>{% endif %}</div>
           <div class="col-12">{{ form.body.label_tag }} {{ form.body }}{% if form.body.help_text %}<div class="form-text">{{ form.body.help_text }}</div>{% endif %}</div>
+          <div class="col-12">
+            <div class="form-text">Delivery tracking is automatically managed by the system.</div>
+          </div>
         </div>
 
-        <h2 class="h6 text-uppercase text-muted mb-2">When</h2>
+        <h2 class="h6 text-uppercase text-muted mb-2">Assignment</h2>
         <div class="row g-3 mb-3">
-          <div class="col-md-6">{{ form.sent_at.label_tag }} {{ form.sent_at }}</div>
           <div class="col-md-6">{{ form.owner.label_tag }} {{ form.owner }}{% if form.owner.help_text %}<div class="form-text">{{ form.owner.help_text }}</div>{% endif %}</div>
         </div>
 
@@ -73,7 +85,7 @@
         </div>
 
         <div class="d-flex gap-2 mt-3">
-          <button class="btn btn-primary" type="submit">Save</button>
+          <button class="btn btn-primary" type="submit">Send</button>
           {% if object %}
             <a class="btn btn-outline-secondary" href="{% url detail_url_name object.pk %}">Cancel</a>
           {% else %}
@@ -92,6 +104,11 @@
     var recipientType = document.getElementById("id_recipient_type");
     var prospectWrap = document.getElementById("prospect-field-wrap");
     var studentWrap = document.getElementById("student-field-wrap");
+    var form = document.querySelector("form[method='post']");
+    var subjectInput = document.getElementById("id_subject");
+    var senderValue = "{{ recipient_sender_email|default:''|escapejs }}";
+    var recipientCount = "{{ recipient_preview_count|default:'1'|escapejs }}";
+    var invalidCount = "{{ recipient_invalid_tokens|length|default:'0'|escapejs }}";
 
     function toggleRecipientFields() {
       if (!recipientType) return;
@@ -103,6 +120,22 @@
     if (recipientType) {
       recipientType.addEventListener("change", toggleRecipientFields);
       toggleRecipientFields();
+    }
+
+    if (form) {
+      form.addEventListener("submit", function (event) {
+        var subject = subjectInput ? (subjectInput.value || "").trim() : "";
+        var preview = [
+          "Send this email now?",
+          "Sender: " + (senderValue || "-"),
+          "Recipients: " + recipientCount,
+          "Subject: " + (subject || "(empty)"),
+          "Invalid/skipped: " + invalidCount
+        ].join("\n");
+        if (!window.confirm(preview)) {
+          event.preventDefault();
+        }
+      });
     }
   })();
 </script>

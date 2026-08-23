@@ -112,9 +112,9 @@
           {% for obj in object_list %}
           <tr>
             <td class="text-center">
-              <input type="checkbox" class="form-check-input" data-bulk-row-select value="{{ obj.id }}" aria-label="Select contact {{ obj }}">
+              <input type="checkbox" class="form-check-input" data-bulk-row-select value="{{ obj.pk }}" aria-label="Select contact {{ obj }}">
             </td>
-            <td class="contact-id text-nowrap">{{ obj.pk }}</td>
+            <td class="text-nowrap">{{ obj.public_id }}</td>
             <td class="contact-name-cell">
               <a href="{% url detail_url_name obj.pk %}" class="link-primary fw-semibold">{{ obj }}</a>
               {% if obj.has_converted_prospect %}
@@ -159,9 +159,6 @@
   .contact-list-table th,
   .contact-list-table td {
     vertical-align: middle;
-  }
-  .contact-list-table .contact-id {
-    width: 70px;
   }
   .contact-list-table .contact-name-cell {
     min-width: 220px;

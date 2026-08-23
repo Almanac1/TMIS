@@ -5,7 +5,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Div, Field, Fieldset, HTML, Layout, Row, Submit
-from django.db.models import DecimalField, ExpressionWrapper, F, Sum, Value
+from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -21,6 +21,7 @@ from .models import (
     CourseSession,
     Invoice,
     Payment,
+    PaymentConfirmationStatus,
     Prospect,
     ProspectStatus,
     RecipientType,
@@ -109,6 +110,7 @@ class EnrollmentForm(forms.ModelForm):
         ("student", "Existing Student"),
         ("prospect", "Existing Prospect"),
         ("contact", "Existing Contact"),
+        ("new_contact", "New Contact"),
         ("new_prospect", "New Prospect"),
     )
 
@@ -174,6 +176,7 @@ class EnrollmentForm(forms.ModelForm):
         return code in {"TMF", "TMFM"} or "family" in name
 
     def __init__(self, *args, **kwargs):
+        request_user = kwargs.pop("request_user", None)
         super().__init__(*args, **kwargs)
         self.helper = FormHelper()
         self.helper.form_method = "post"
@@ -200,7 +203,7 @@ class EnrollmentForm(forms.ModelForm):
                           <label for="entity-search-input" class="form-label">Search and select person</label>
                           <div class="input-group input-group-lg">
                             <span class="input-group-text"><i class="bi bi-search"></i></span>
-                            <input type="text" id="entity-search-input" class="form-control" placeholder="Type at least 2 characters">
+                            <input type="text" id="entity-search-input" class="form-control" placeholder="Search for a student..." autocomplete="off">
                           </div>
                           <div class="form-text">Search by first name, last name, email, or phone.</div>
                           <div id="entity-search-results" class="list-group mt-2"></div>
@@ -285,16 +288,42 @@ class EnrollmentForm(forms.ModelForm):
                 css_class="sticky-action-bar d-flex flex-wrap gap-2 justify-content-end",
             ),
         )
-        self.fields["student"].queryset = Student.objects.select_related("prospect__contact").order_by(
-            "prospect__contact__first_name",
-            "prospect__contact__last_name",
-        )
-        self.fields["prospect"].queryset = Prospect.objects.select_related("contact").filter(
-            is_archived=False
-        ).order_by("contact__first_name", "contact__last_name")
-        self.fields["contact"].queryset = Contact.objects.order_by("first_name", "last_name")
+        # The AJAX lookup selects these values. Keeping their backing querysets
+        # empty on GET prevents Django from loading every person into the page.
+        # On POST, only the submitted, user-scoped record is accepted.
+        from .services.ownership import scope_queryset_for_user
+
+        person_fields = {
+            "student": (Student, Student.objects.select_related("prospect__contact")),
+            "prospect": (Prospect, Prospect.objects.select_related("contact").filter(is_archived=False)),
+            "contact": (Contact, Contact.objects.all()),
+        }
+        for field_name, (model, base_queryset) in person_fields.items():
+            self.fields[field_name].widget = forms.HiddenInput()
+            selected_id = ""
+            if self.is_bound:
+                selected_id = str(self.data.get(field_name) or "").strip()
+            elif self.instance and self.instance.pk and field_name == "student":
+                selected_id = str(self.instance.student_id or "")
+
+            queryset = base_queryset
+            if request_user is not None:
+                queryset = scope_queryset_for_user(
+                    queryset=queryset,
+                    model=model,
+                    user=request_user,
+                )
+            self.fields[field_name].queryset = (
+                queryset.filter(pk=int(selected_id)) if selected_id.isdigit() else queryset.none()
+            )
         self.fields["course"].queryset = Course.objects.filter(status="active").order_by("name")
         session_qs = CourseSession.objects.select_related("course", "teacher", "location").order_by("-start_date")
+        if request_user is not None:
+            session_qs = scope_queryset_for_user(
+                queryset=session_qs,
+                model=CourseSession,
+                user=request_user,
+            )
         selected_course = None
         if self.is_bound:
             selected_course_id = (self.data.get("course") or "").strip()
@@ -334,11 +363,13 @@ class EnrollmentForm(forms.ModelForm):
 
         if person_type == "student" and not student:
             self.add_error("student", "Select an existing student.")
+            if str(self.data.get("student") or "").strip():
+                self.add_error(None, "The selected student is unavailable or invalid. Search and select again.")
         elif person_type == "prospect" and not prospect:
             self.add_error("prospect", "Select an existing prospect.")
         elif person_type == "contact" and not contact:
             self.add_error("contact", "Select an existing contact.")
-        elif person_type == "new_prospect":
+        elif person_type in {"new_prospect", "new_contact"}:
             if not cleaned.get("new_first_name"):
                 self.add_error("new_first_name", "First name is required.")
             if not cleaned.get("new_last_name"):
@@ -357,6 +388,13 @@ class EnrollmentForm(forms.ModelForm):
             self.add_error("session", "No session is available for the selected course.")
         if selected_course and session and session.course_id != selected_course.pk:
             self.add_error("session", "Selected session does not belong to the selected course.")
+        if person_type == "student" and student and selected_course:
+            from .services.enrollment_eligibility import validate_course_eligibility
+
+            try:
+                validate_course_eligibility(student, selected_course)
+            except forms.ValidationError as exc:
+                self.add_error("course", " ".join(exc.messages))
 
         is_tm_family = self._is_tm_family_course(selected_course)
         if is_tm_family:
@@ -492,7 +530,12 @@ class PaymentForm(forms.ModelForm):
             )
             .annotate(
                 amount_paid=Coalesce(
-                    Sum("payments__amount_paid"),
+                    Sum(
+                        "payments__amount_paid",
+                        filter=Q(
+                            payments__confirmation_status=PaymentConfirmationStatus.CONFIRMED,
+                        ),
+                    ),
                     Value(Decimal("0.00")),
                     output_field=DecimalField(max_digits=10, decimal_places=2),
                 )
@@ -520,7 +563,7 @@ class PaymentForm(forms.ModelForm):
         outstanding = (invoice.outstanding_balance or Decimal("0.00")).quantize(Decimal("0.01"))
         return (
             f"{invoice.invoice_number} | {student_name} | {course_name} | "
-            f"Total ${total} | Paid ${paid} | Due ${outstanding}"
+            f"Total GHS {total} | Paid GHS {paid} | Due GHS {outstanding}"
         )
 
     def __init__(self, *args, **kwargs):
@@ -528,15 +571,6 @@ class PaymentForm(forms.ModelForm):
         self.selected_student_id = kwargs.pop("selected_student_id", None)
         super().__init__(*args, **kwargs)
         self.fields["payment_date"].input_formats = ("%Y-%m-%dT%H:%M",)
-        self.fields["student"].queryset = Student.objects.select_related(
-            "prospect__contact"
-        ).order_by("prospect__contact__first_name", "prospect__contact__last_name")
-
-        if self.request_user and not (self.request_user.is_staff or self.request_user.is_superuser):
-            self.fields["student"].queryset = self.fields["student"].queryset.filter(
-                owner=self.request_user
-            )
-
         bound_student = (
             self.data.get("student")
             if self.is_bound
@@ -545,6 +579,16 @@ class PaymentForm(forms.ModelForm):
         if bound_student and str(bound_student).isdigit():
             self.selected_student_id = int(bound_student)
             self.initial["student"] = int(bound_student)
+
+        student_queryset = Student.objects.select_related("prospect__contact")
+        if self.request_user and not (self.request_user.is_staff or self.request_user.is_superuser):
+            student_queryset = student_queryset.filter(owner=self.request_user)
+        self.fields["student"].widget = forms.HiddenInput()
+        self.fields["student"].queryset = (
+            student_queryset.filter(pk=self.selected_student_id)
+            if self.selected_student_id
+            else student_queryset.none()
+        )
         is_create = not (self.instance and self.instance.pk)
         self.no_student_selected = is_create and not self.selected_student_id
         if self.no_student_selected:
@@ -571,7 +615,12 @@ class PaymentForm(forms.ModelForm):
                     )
                     .annotate(
                         amount_paid=Coalesce(
-                            Sum("payments__amount_paid"),
+                            Sum(
+                                "payments__amount_paid",
+                                filter=Q(
+                                    payments__confirmation_status=PaymentConfirmationStatus.CONFIRMED,
+                                ),
+                            ),
                             Value(Decimal("0.00")),
                             output_field=DecimalField(max_digits=10, decimal_places=2),
                         )
@@ -653,7 +702,9 @@ class PaymentForm(forms.ModelForm):
             self.add_error("invoice", "Select a valid open invoice for this student/owner.")
 
         if invoice and amount_paid:
-            paid_queryset = invoice.payments.all()
+            paid_queryset = invoice.payments.filter(
+                confirmation_status=PaymentConfirmationStatus.CONFIRMED,
+            )
             if self.instance and self.instance.pk:
                 paid_queryset = paid_queryset.exclude(pk=self.instance.pk)
             paid_total = (
@@ -670,41 +721,14 @@ class PaymentForm(forms.ModelForm):
             if amount_paid > outstanding:
                 self.add_error(
                     "amount_paid",
-                    f"Amount cannot exceed outstanding balance of ${outstanding.quantize(Decimal('0.01'))}.",
+                    f"Amount cannot exceed outstanding balance of GHS {outstanding.quantize(Decimal('0.01'))}.",
                 )
         return cleaned
 
 
 class CommunicationForm(forms.ModelForm):
-    class Meta:
-        model = Communication
-        fields = (
-            "recipient_type",
-            "prospect",
-            "student",
-            "enrollment",
-            "channel",
-            "communication_type",
-            "subject",
-            "body",
-            "sent_at",
-            "delivery_status",
-            "provider_status",
-            "related_entity_type",
-            "related_entity_id",
-            "notes",
-            "owner",
-        )
-        widgets = {
-            "sent_at": forms.DateTimeInput(
-                attrs={"type": "datetime-local"},
-                format="%Y-%m-%dT%H:%M",
-            ),
-            "body": forms.Textarea(attrs={"rows": 4}),
-            "notes": forms.Textarea(attrs={"rows": 3}),
-        }
-
     def __init__(self, *args, **kwargs):
+        self.allow_recipient_override = kwargs.pop("allow_recipient_override", False)
         super().__init__(*args, **kwargs)
         for name, field in self.fields.items():
             css_class = "form-control"
@@ -714,10 +738,8 @@ class CommunicationForm(forms.ModelForm):
             field.widget.attrs["class"] = f"{existing} {css_class}".strip()
         self.fields["recipient_type"].label = "Recipient Type"
         self.fields["communication_type"].label = "Message Type"
-        self.fields["sent_at"].label = "Sent On"
-        self.fields["subject"].help_text = "Optional short title for easy timeline scanning."
-        self.fields["body"].help_text = "Main communication content."
-        self.fields["delivery_status"].help_text = "Current delivery outcome."
+        self.fields["subject"].help_text = "Required. Email subject line."
+        self.fields["body"].help_text = "Required. Main communication content."
         self.fields["enrollment"].help_text = (
             "Optional. Link only when this communication is about a specific enrollment."
         )
@@ -733,8 +755,8 @@ class CommunicationForm(forms.ModelForm):
         self.fields["prospect"].required = False
         self.fields["student"].required = False
         self.fields["enrollment"].required = False
-        self.fields["subject"].required = False
-        self.fields["sent_at"].required = False
+        self.fields["subject"].required = True
+        self.fields["body"].required = True
         self.fields["provider_status"].required = False
         self.fields["related_entity_type"].required = False
         self.fields["related_entity_id"].required = False
@@ -747,7 +769,6 @@ class CommunicationForm(forms.ModelForm):
         ).order_by("prospect__contact__first_name", "prospect__contact__last_name")
         self.fields["enrollment"].queryset = self.fields["enrollment"].queryset.none()
         self.fields["channel"].initial = CommunicationChannel.EMAIL
-        self.fields["delivery_status"].initial = self.fields["delivery_status"].initial or "queued"
         self.fields["owner"].required = False
         self.fields["owner"].help_text = "Auto-assigned for non-superusers."
         recipient_type = (
@@ -772,29 +793,40 @@ class CommunicationForm(forms.ModelForm):
                 self.fields["enrollment"].queryset = student.enrollments.order_by(
                     "-enrollment_date"
                 )
-        self.fields["sent_at"].input_formats = ("%Y-%m-%dT%H:%M",)
-        self.fields["sent_at"].error_messages.update(
-            {
-                "invalid": "Enter a valid date and time (YYYY-MM-DD HH:MM).",
-            }
+
+    class Meta:
+        model = Communication
+        fields = (
+            "recipient_type",
+            "prospect",
+            "student",
+            "enrollment",
+            "channel",
+            "communication_type",
+            "subject",
+            "body",
+            "provider_status",
+            "related_entity_type",
+            "related_entity_id",
+            "notes",
+            "owner",
         )
-        if self.instance and self.instance.pk and self.instance.sent_at:
-            sent_at_value = self.instance.sent_at
-            if timezone.is_aware(sent_at_value):
-                sent_at_value = timezone.localtime(sent_at_value)
-            self.initial["sent_at"] = sent_at_value.strftime("%Y-%m-%dT%H:%M")
+        widgets = {
+            "body": forms.Textarea(attrs={"rows": 4}),
+            "notes": forms.Textarea(attrs={"rows": 3}),
+        }
 
     def clean(self):
         cleaned = super().clean()
         recipient_type = cleaned.get("recipient_type")
         prospect = cleaned.get("prospect")
         student = cleaned.get("student")
-        if recipient_type == "prospect":
+        if not self.allow_recipient_override and recipient_type == "prospect":
             if not prospect:
                 self.add_error("prospect", "Select a prospect for this recipient type.")
             if student:
                 self.add_error("student", "Leave student empty when recipient type is prospect.")
-        elif recipient_type == "student":
+        elif not self.allow_recipient_override and recipient_type == "student":
             if not student:
                 self.add_error("student", "Select a student for this recipient type.")
             if prospect:
@@ -813,7 +845,11 @@ class CommunicationForm(forms.ModelForm):
             and student.prospect.contact_id
         ):
             recipient_email = (student.prospect.contact.email or "").strip()
-        if recipient_type in {RecipientType.PROSPECT, RecipientType.STUDENT} and not recipient_email:
+        if (
+            not self.allow_recipient_override
+            and recipient_type in {RecipientType.PROSPECT, RecipientType.STUDENT}
+            and not recipient_email
+        ):
             raise forms.ValidationError("Selected recipient does not have an email address.")
         return cleaned
 
@@ -943,8 +979,11 @@ class ProspectForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         use_existing_contact = bool(cleaned.get("prospect_is_existing_contact"))
-        contact = cleaned.get("selected_contact")
-        if not contact and self.instance and self.instance.contact_id:
+        # A hidden contact selection can remain in the submitted form after the
+        # user switches back to new-contact mode. Only honor that field when
+        # existing-contact mode is explicitly enabled.
+        contact = cleaned.get("selected_contact") if use_existing_contact else None
+        if not contact and self.instance.pk and self.instance.contact_id:
             contact = self.instance.contact
 
         first_name = (
@@ -974,15 +1013,12 @@ class ProspectForm(forms.ModelForm):
             if not email and not phone_number:
                 raise forms.ValidationError("Provide at least an email or phone number for new contacts.")
             if not contact:
-                if email:
-                    contact = Contact.objects.filter(email__iexact=email).first()
-                if not contact and phone_number:
-                    contact = Contact.find_matching_contact(phone_number=phone_number)
-                if not contact and first_name and last_name:
-                    contact = Contact.objects.filter(
-                        first_name__iexact=first_name,
-                        last_name__iexact=last_name,
-                    ).first()
+                contact = Contact.find_matching_contact(
+                    first_name=first_name,
+                    last_name=last_name,
+                    email=email,
+                    phone_number=phone_number,
+                )
 
         if not contact:
             contact = Contact.objects.create(

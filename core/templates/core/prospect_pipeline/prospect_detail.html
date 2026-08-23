@@ -9,11 +9,15 @@
     <a href="{% url 'core:prospect-pipeline-list' %}" class="btn btn-outline-secondary">Back to Pipeline</a>
     {% if is_converted %}
       <span class="btn btn-success disabled">Already Converted</span>
-    {% else %}
+    {% elif conversion_eligibility.eligible %}
       <form method="post" action="{% url 'core:prospect-pipeline-convert' prospect.pk %}">
         {% csrf_token %}
         <button type="submit" class="btn btn-primary">Convert to Student</button>
       </form>
+    {% else %}
+      <span class="d-inline-block" tabindex="0" title="{{ conversion_eligibility.message }}">
+        <button type="button" class="btn btn-outline-secondary" disabled aria-disabled="true">Invoice/payment required</button>
+      </span>
     {% endif %}
   </div>
 </div>

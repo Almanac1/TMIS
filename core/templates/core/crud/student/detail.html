@@ -8,6 +8,12 @@
 {% block content %}
 {% with student=object %}
 <div class="student-profile-page">
+  {% if not student_completion_financials.eligible %}
+    <div class="alert {% if student.enrollment_status == 'completed' %}alert-danger{% else %}alert-warning{% endif %}" role="alert">
+      <strong>{% if student.enrollment_status == 'completed' %}Completion integrity violation:{% else %}Completion blocked:{% endif %}</strong>
+      {{ student_completion_financials.message }}
+    </div>
+  {% endif %}
   <header class="sp-shell sp-header" aria-label="Student profile header">
     <div class="sp-header-identity">
       <div class="sp-avatar-wrap" aria-label="Student profile image">
@@ -83,11 +89,11 @@
       </article>
       <article class="sp-metric-card">
         <p class="sp-metric-label">Total Amount Paid</p>
-        <p class="sp-metric-value">${{ student_metrics.total_amount_paid|floatformat:2 }}</p>
+        <p class="sp-metric-value">GHS {{ student_metrics.total_amount_paid|floatformat:2 }}</p>
       </article>
       <article class="sp-metric-card sp-metric-card-alert">
         <p class="sp-metric-label">Outstanding Balance</p>
-        <p class="sp-metric-value sp-text-warning">${{ student_metrics.outstanding_balance|floatformat:2 }}</p>
+        <p class="sp-metric-value sp-text-warning">GHS {{ student_metrics.outstanding_balance|floatformat:2 }}</p>
       </article>
       <article class="sp-metric-card">
         <p class="sp-metric-label">Assigned Governors</p>
@@ -165,13 +171,13 @@
                       </a>
                     </td>
                     <td>{{ invoice.issue_date|date:"M d, Y" }}</td>
-                    <td>${{ invoice.amount_paid|floatformat:2 }}</td>
+                    <td>GHS {{ invoice.amount_paid|floatformat:2 }}</td>
                     <td>
                       <span class="sp-chip {% if invoice.calculated_balance_due > 0 and invoice.due_date and invoice.due_date < today %}sp-chip-overdue{% elif invoice.calculated_balance_due > 0 %}sp-chip-partial{% endif %}">
-                        {{ invoice.get_status_display|default:invoice.status }}
+                        {{ invoice.computed_payment_status }}
                       </span>
                     </td>
-                    <td>${{ invoice.calculated_balance_due|floatformat:2 }}</td>
+                    <td>GHS {{ invoice.calculated_balance_due|floatformat:2 }}</td>
                   </tr>
                 {% endfor %}
               {% else %}

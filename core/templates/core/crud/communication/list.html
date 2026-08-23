@@ -130,8 +130,8 @@
         <tbody>
           {% for obj in object_list %}
           <tr>
-            <td class="text-center"><input type="checkbox" class="form-check-input" data-bulk-row-select value="{{ obj.id }}" aria-label="Select communication {{ obj.pk }}"></td>
-            <td class="contact-id">{{ obj.pk }}</td>
+            <td class="text-center"><input type="checkbox" class="form-check-input" data-bulk-row-select value="{{ obj.pk }}" aria-label="Select communication {{ obj.pk }}"></td>
+            <td class="text-nowrap">{{ obj.pk }}</td>
             <td>{% if obj.student %}<a href="{% url 'core:student-detail' obj.student.pk %}" class="link-primary">{{ obj.student.prospect|default:obj.student }}</a>{% elif obj.prospect %}<a href="{% url 'core:prospect-detail' obj.prospect.pk %}" class="link-primary">{{ obj.prospect }}</a>{% else %}<span class="text-muted">-</span>{% endif %}</td>
             <td>{{ obj.get_recipient_type_display|default:"-" }}</td>
             <td>{{ obj }}</td>

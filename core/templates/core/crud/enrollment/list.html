@@ -65,6 +65,7 @@
             <th>Student</th>
             <th>Course</th>
             <th>Session</th>
+            <th>Invoice</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
@@ -76,6 +77,15 @@
             <td class="enroll-student">{{ obj.student.prospect|default:obj.student }}</td>
             <td class="enroll-course">{{ obj.course.name|default:"-" }}</td>
             <td class="enroll-session">{{ obj.session.start_date|date:"Y-m-d" }}</td>
+            <td class="enroll-invoice">
+              {% if obj.invoice %}
+                <a href="{% url 'core:invoice-detail' obj.invoice.pk %}" class="link-primary fw-semibold">
+                  {{ obj.invoice.invoice_number }}
+                </a>
+              {% else %}
+                <span class="text-muted">Not generated</span>
+              {% endif %}
+            </td>
             <td>
               <span class="enroll-chip">
                 {{ obj.get_status_display }}
@@ -91,7 +101,7 @@
           </tr>
           {% empty %}
           <tr>
-            <td colspan="6" class="empty-state">
+            <td colspan="7" class="empty-state">
               <strong>
                 {% if search_query %}
                   No enrollments found for this search.

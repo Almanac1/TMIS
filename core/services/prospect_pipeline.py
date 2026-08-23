@@ -11,6 +11,7 @@ from core.models import (
     ProspectStatus,
     RecipientType,
 )
+from core.services.prospect_conversion import get_prospect_conversion_eligibility
 
 
 def get_user_scoped_prospect_queryset(user, *, include_archived: bool = False):
@@ -92,7 +93,7 @@ def get_pipeline_status_breakdown(*, user):
     rows = (
         get_user_scoped_prospect_queryset(user)
         .values("status")
-        .annotate(total=Count("id"))
+        .annotate(total=Count("pk"))
         .order_by("status")
     )
     return [
@@ -110,11 +111,18 @@ def get_prospect_detail_context(prospect: Prospect):
     communications = prospect.communications.select_related("enrollment").all()
     student = getattr(prospect, "student_record", None)
 
+    eligibility = get_prospect_conversion_eligibility(prospect)
+    is_converted = bool(
+        prospect.converted_to_student
+        or prospect.converted_student_id
+        or prospect.status == ProspectStatus.CONVERTED
+    )
     return {
         "inquiries": inquiries,
         "communications": communications,
         "student": student,
-        "is_converted": student is not None,
+        "is_converted": is_converted,
+        "conversion_eligibility": eligibility,
     }
 
 

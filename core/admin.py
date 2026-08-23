@@ -37,6 +37,7 @@ from .services.disbursement_reports import (
     get_disbursed_total_for_period,
 )
 from .services.invoicing import generate_invoice_for_enrollment
+from .services.prospect_conversion import get_prospect_conversion_eligibility
 
 logger = logging.getLogger(__name__)
 
@@ -309,10 +310,13 @@ class ProspectAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         except (ValueError, TypeError):
             prospect = None
         if prospect is not None:
-            extra_context["convert_to_student_url"] = reverse(
-                "admin:core_prospect_convert_to_student",
-                args=[prospect.pk],
-            )
+            eligibility = get_prospect_conversion_eligibility(prospect)
+            extra_context["conversion_eligibility"] = eligibility
+            if eligibility.eligible:
+                extra_context["convert_to_student_url"] = reverse(
+                    "admin:core_prospect_convert_to_student",
+                    args=[prospect.pk],
+                )
         return super().change_view(request, object_id, form_url, extra_context=extra_context)
 
     @admin.display(description="Converted", boolean=True)
@@ -330,9 +334,20 @@ class ProspectAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     def convert_to_student_button(self, obj):
         if not obj or not obj.pk:
             return "Save this prospect first to enable conversion."
-        if hasattr(obj, "student_record"):
+        is_converted = bool(
+            obj.converted_to_student
+            or obj.converted_student_id
+            or obj.status == "converted"
+        )
+        if is_converted and hasattr(obj, "student_record"):
             student_url = reverse("admin:core_student_change", args=[obj.student_record.pk])
             return format_html('Already converted. <a href="{}">Open Student</a>', student_url)
+        eligibility = get_prospect_conversion_eligibility(obj)
+        if not eligibility.eligible:
+            return format_html(
+                '<span style="color:#6c757d" title="{}">Invoice/payment required</span>',
+                eligibility.message,
+            )
         url = reverse("admin:core_prospect_convert_to_student", args=[obj.pk])
         return format_html('<a class="button" href="{}">Convert to Student</a>', url)
 
@@ -361,6 +376,11 @@ class ProspectAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
                 reverse("admin:core_prospect_change", args=[prospect.pk])
             )
 
+        was_converted = bool(
+            prospect.converted_to_student
+            or prospect.converted_student_id
+            or prospect.status == "converted"
+        )
         try:
             student, created = prospect.convert_to_student()
         except ValidationError as exc:
@@ -372,7 +392,7 @@ class ProspectAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
             return HttpResponseRedirect(
                 reverse("admin:core_prospect_change", args=[prospect.pk])
             )
-        if created:
+        if created or not was_converted:
             self.message_user(
                 request,
                 f"{prospect} was converted to Student successfully.",
@@ -399,7 +419,7 @@ class ProspectAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
 
         created_count = 0
         existing_count = 0
-        duplicate_count = 0
+        blocked_count = 0
         failed_count = 0
 
         for prospect in queryset:
@@ -410,7 +430,7 @@ class ProspectAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
                 else:
                     existing_count += 1
             except ValidationError:
-                duplicate_count += 1
+                blocked_count += 1
             except Exception:
                 logger.exception(
                     "Failed to convert prospect %s to student via admin action.",
@@ -430,12 +450,12 @@ class ProspectAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
                 f"{existing_count} prospect(s) already had student records.",
                 level=messages.WARNING,
             )
-        if duplicate_count:
+        if blocked_count:
             self.message_user(
                 request,
                 (
-                    f"{duplicate_count} prospect(s) were skipped because they look like "
-                    "duplicate students."
+                    f"{blocked_count} prospect(s) were skipped because conversion "
+                    "requirements were not satisfied."
                 ),
                 level=messages.WARNING,
             )
@@ -1231,7 +1251,7 @@ class CommunicationAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     )
     ordering = ("-created_at",)
     list_select_related = ("prospect", "student", "student__prospect", "enrollment")
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("delivery_status", "sent_at", "created_at", "updated_at")
 
     @admin.display(description="Recipient")
     def recipient_display(self, obj):
@@ -1266,6 +1286,8 @@ class ContactAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
 class MeditatorAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     list_display = (
         "student",
+        "is_active",
+        "invalidated_at",
         "transitioned_at",
         "transition_trigger",
         "intro_completed_on",
@@ -1276,8 +1298,8 @@ class MeditatorAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "student__prospect__contact__last_name",
         "student__prospect__contact__email",
     )
-    list_filter = ("transition_trigger", "transitioned_at")
-    ordering = ("-transitioned_at", "-id")
+    list_filter = ("is_active", "transition_trigger", "transitioned_at")
+    ordering = ("-transitioned_at", "-created_at")
     list_select_related = ("student", "student__prospect", "student__prospect__contact")
     readonly_fields = (
         "student",
@@ -1286,6 +1308,9 @@ class MeditatorAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "intro_completed_on",
         "day20_completed_on",
         "metadata",
+        "is_active",
+        "invalidated_at",
+        "invalidation_reason",
         "created_at",
         "updated_at",
     )

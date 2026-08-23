@@ -1,0 +1,7 @@
+Please submit your course donation to the official TM center account shared by your coordinator.
+Include donation/invoice number {{ invoice.invoice_number }} in your transfer notes for reconciliation.
+
+Donation Instructions:
+- Bank transfer and approved center channels are accepted.
+- Please reference the donation/invoice number for accurate posting.
+- Contact the Maharishi Foundation Team if you need help before donating.

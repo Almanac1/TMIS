@@ -1,4 +1,5 @@
 import re
+import uuid
 from decimal import Decimal
 
 from django.conf import settings
@@ -176,6 +177,7 @@ class MeditatorTransitionEventType(models.TextChoices):
 
 class Prospect(TimeStampedModel):
     BAD_LEAD_ATTEMPT_THRESHOLD = 4
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -347,6 +349,24 @@ class Prospect(TimeStampedModel):
         Returns:
             tuple[Student, bool]: (student_instance, created_flag)
         """
+        existing_student = getattr(self, "student_record", None) or self.converted_student
+        if (
+            existing_student is not None
+            and self.status == ProspectStatus.CONVERTED
+            and self.converted_to_student
+            and self.converted_student_id == existing_student.pk
+        ):
+            return existing_student, False
+
+        from core.services.prospect_conversion import (
+            validate_prospect_conversion_financial_eligibility,
+        )
+
+        # This domain-level validation is intentionally before any Student or
+        # Prospect mutation so every caller, including direct POSTs and admin
+        # actions, is subject to the financial requirement.
+        validate_prospect_conversion_financial_eligibility(self)
+
         duplicate_student = self.find_potential_duplicate_student()
         if duplicate_student:
             raise ValidationError(
@@ -385,11 +405,24 @@ class Prospect(TimeStampedModel):
                             "updated_at",
                         ]
                     )
+                if student.enrollment_status == EnrollmentStatus.INACTIVE:
+                    student.enrollment_status = EnrollmentStatus.PENDING
+                    student.save(update_fields=["enrollment_status", "updated_at"])
                 return student, created
         except IntegrityError:
             # Handles rare race conditions where another process creates the row
             # concurrently between get and create.
-            student = Student.objects.get(prospect=self)
+            student = Student.objects.filter(prospect=self).first()
+            if student is None:
+                with transaction.atomic():
+                    student, _ = Student.objects.get_or_create(
+                        prospect=self,
+                        defaults={
+                            "owner": self.owner,
+                            "teacher": self.teacher,
+                            "notes": self.notes,
+                        },
+                    )
             if (
                 self.status != ProspectStatus.CONVERTED
                 or not self.converted_to_student
@@ -409,6 +442,9 @@ class Prospect(TimeStampedModel):
                         "updated_at",
                     ]
                 )
+            if student.enrollment_status == EnrollmentStatus.INACTIVE:
+                student.enrollment_status = EnrollmentStatus.PENDING
+                student.save(update_fields=["enrollment_status", "updated_at"])
             return student, False
 
     def clean(self) -> None:
@@ -422,6 +458,7 @@ class Prospect(TimeStampedModel):
 
 
 class Contact(TimeStampedModel):
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     email = models.EmailField(blank=True, null=True)
@@ -460,22 +497,42 @@ class Contact(TimeStampedModel):
                     defaults=defaults,
                 )
         except IntegrityError:
-            return Prospect.objects.get(contact=self), False
+            # Handle race conditions defensively without throwing DoesNotExist.
+            existing = Prospect.objects.filter(contact=self).first()
+            if existing is not None:
+                return existing, False
+            with transaction.atomic():
+                return Prospect.objects.get_or_create(
+                    contact=self,
+                    defaults=defaults,
+                )
 
     @staticmethod
     def _normalize_phone(phone: str) -> str:
         return re.sub(r"\D+", "", phone or "")
 
     @classmethod
-    def find_matching_contact(cls, *, email: str = "", phone_number: str = ""):
+    def find_matching_contact(
+        cls,
+        *,
+        email: str = "",
+        phone_number: str = "",
+        first_name: str = "",
+        last_name: str = "",
+    ):
         email_value = (email or "").strip()
         phone_digits = cls._normalize_phone(phone_number)
+        candidates = cls.objects.all()
+        if first_name:
+            candidates = candidates.filter(first_name__iexact=first_name.strip())
+        if last_name:
+            candidates = candidates.filter(last_name__iexact=last_name.strip())
         if email_value:
-            match = cls.objects.filter(email__iexact=email_value).first()
+            match = candidates.filter(email__iexact=email_value).first()
             if match:
                 return match
         if phone_digits:
-            for contact in cls.objects.exclude(phone_number__isnull=True).exclude(phone_number=""):
+            for contact in candidates.exclude(phone_number__isnull=True).exclude(phone_number=""):
                 if cls._normalize_phone(contact.phone_number) == phone_digits:
                     return contact
         return None
@@ -489,7 +546,12 @@ class Contact(TimeStampedModel):
         email: str = "",
         phone_number: str = "",
     ):
-        match = cls.find_matching_contact(email=email, phone_number=phone_number)
+        match = cls.find_matching_contact(
+            email=email,
+            phone_number=phone_number,
+            first_name=first_name,
+            last_name=last_name,
+        )
         if match:
             updated_fields = []
             if first_name and not match.first_name:
@@ -530,17 +592,6 @@ class Contact(TimeStampedModel):
             )
             if duplicate_email.exists():
                 raise ValidationError({"email": "A contact with this email already exists."})
-
-        if self.phone_number:
-            phone_digits = self._normalize_phone(self.phone_number)
-            for candidate in Contact.objects.exclude(pk=self.pk).exclude(
-                phone_number__isnull=True
-            ).exclude(phone_number=""):
-                if self._normalize_phone(candidate.phone_number) == phone_digits:
-                    raise ValidationError(
-                        {"phone_number": "A contact with this phone number already exists."}
-                    )
-
 
 class Teacher(TimeStampedModel):
     user = models.OneToOneField(
@@ -596,9 +647,8 @@ class TeacherSpecialization(TimeStampedModel):
         verbose_name = "Teacher Specialization"
         verbose_name_plural = "Teacher Specializations"
 
-    def __str__(self) -> str:
-        return self.name
-
+        def __str__(self) -> str:
+            return self.name
 
 class Location(TimeStampedModel):
     name = models.CharField(max_length=150, unique=True)
@@ -635,6 +685,7 @@ class Location(TimeStampedModel):
 
 
 class Student(TimeStampedModel):
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -715,6 +766,12 @@ class Student(TimeStampedModel):
             raise ValidationError(
                 "Student cannot be marked completed without TM Introductory Program enrollment."
             )
+        if self.enrollment_status == EnrollmentStatus.COMPLETED:
+            from core.services.enrollment_completion import (
+                validate_student_completion_financials,
+            )
+
+            validate_student_completion_financials(self)
 
     def save(self, *args, **kwargs):
         if self.prospect_id and not self.owner_id:
@@ -727,6 +784,12 @@ class Student(TimeStampedModel):
             raise ValidationError(
                 "Student cannot be marked completed without TM Introductory Program enrollment."
             )
+        if self.enrollment_status == EnrollmentStatus.COMPLETED:
+            from core.services.enrollment_completion import (
+                validate_student_completion_financials,
+            )
+
+            validate_student_completion_financials(self)
         super().save(*args, **kwargs)
         if self.pk:
             # System-managed transition check; users do not manually set meditator state.
@@ -972,6 +1035,12 @@ class Enrollment(TimeStampedModel):
             raise ValidationError("discount_amount cannot exceed fee_amount.")
         if self.course_id and self.session_id and self.session.course_id != self.course_id:
             raise ValidationError("Selected session does not belong to the selected course.")
+        if self.status == EnrollmentStatus.COMPLETED:
+            from core.services.enrollment_completion import (
+                validate_enrollment_completion_financials,
+            )
+
+            validate_enrollment_completion_financials(self)
 
     def save(self, *args, **kwargs):
         if self.discount_amount and self.fee_amount and self.discount_amount > self.fee_amount:
@@ -980,6 +1049,12 @@ class Enrollment(TimeStampedModel):
             self.course_id = self.session.course_id
         if self.course_id and self.session_id and self.session.course_id != self.course_id:
             raise ValidationError("Selected session does not belong to the selected course.")
+        if self.status == EnrollmentStatus.COMPLETED:
+            from core.services.enrollment_completion import (
+                validate_enrollment_completion_financials,
+            )
+
+            validate_enrollment_completion_financials(self)
         self.balance_due = (self.fee_amount or Decimal("0.00")) - (
             self.discount_amount or Decimal("0.00")
         )
@@ -1174,6 +1249,11 @@ class Invoice(TimeStampedModel):
         choices=InvoiceStatus.choices,
         default=InvoiceStatus.DRAFT,
     )
+    pdf_file = models.FileField(
+        upload_to="invoices/pdfs/",
+        blank=True,
+        null=True,
+    )
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -1207,7 +1287,9 @@ class Invoice(TimeStampedModel):
     @property
     def total_paid(self) -> Decimal:
         return (
-            self.payments.aggregate(
+            self.payments.filter(
+                confirmation_status=PaymentConfirmationStatus.CONFIRMED,
+            ).aggregate(
                 total=Coalesce(
                     Sum("amount_paid"),
                     Value(Decimal("0.00")),
@@ -1284,6 +1366,7 @@ class Payment(TimeStampedModel):
 
 
 class Meditator(TimeStampedModel):
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     student = models.OneToOneField(
         Student,
         on_delete=models.CASCADE,
@@ -1299,6 +1382,9 @@ class Meditator(TimeStampedModel):
     intro_completed_on = models.DateField(null=True, blank=True, editable=False)
     day20_completed_on = models.DateField(null=True, blank=True, editable=False)
     metadata = models.JSONField(default=dict, blank=True, editable=False)
+    is_active = models.BooleanField(default=True, db_index=True)
+    invalidated_at = models.DateTimeField(null=True, blank=True, editable=False)
+    invalidation_reason = models.TextField(blank=True, editable=False)
 
     class Meta:
         ordering = ["-transitioned_at"]
@@ -1309,6 +1395,11 @@ class Meditator(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"Meditator: {self.student.prospect}"
+
+    @property
+    def public_id(self) -> str:
+        # Stable short display ID for list views in schemas that still use integer PKs.
+        return f"MED-{self.pk}"
 
 
 class MeditatorTransitionEvent(TimeStampedModel):

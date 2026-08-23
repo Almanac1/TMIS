@@ -5,6 +5,10 @@
     <li>
       <a href="{{ convert_to_student_url }}" class="historylink">Convert to Student</a>
     </li>
+  {% elif change and not is_popup and conversion_eligibility and not conversion_eligibility.eligible %}
+    <li>
+      <span title="{{ conversion_eligibility.message }}" style="color:#888; padding:10px 15px; display:block;">Invoice/payment required</span>
+    </li>
   {% endif %}
   {{ block.super }}
 {% endblock %}

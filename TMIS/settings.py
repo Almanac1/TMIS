@@ -17,6 +17,37 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _load_env_file(path: Path, allowed_keys=None):
+    if not path.exists():
+        return
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if allowed_keys is not None and key not in allowed_keys:
+            continue
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+# Load local env files without extra dependencies.
+_load_env_file(BASE_DIR / ".env")
+_load_env_file(
+    BASE_DIR.parent / ".env",
+    allowed_keys={
+        "EMAIL_HOST",
+        "EMAIL_PORT",
+        "EMAIL_USE_TLS",
+        "EMAIL_HOST_USER",
+        "EMAIL_HOST_PASSWORD",
+        "DEFAULT_FROM_EMAIL",
+        "SERVER_EMAIL",
+    },
+)
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
@@ -147,6 +178,8 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
@@ -170,7 +203,7 @@ EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").strip().lower() in {"1", "true", "yes", "on"}
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "rokosun@tm.org")
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "rokosun@tm.org")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "webmaster@localhost")
 SERVER_EMAIL = os.getenv("SERVER_EMAIL", DEFAULT_FROM_EMAIL)

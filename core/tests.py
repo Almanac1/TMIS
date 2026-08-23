@@ -3,6 +3,10 @@ from datetime import timedelta
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core import mail
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.db import IntegrityError
+from io import StringIO
 from django.test import TestCase, SimpleTestCase
 from django.test.utils import override_settings
 from django.urls import NoReverseMatch, reverse
@@ -20,8 +24,12 @@ from .models import (
     Enrollment,
     EnrollmentStatus,
     Invoice,
+    InvoiceStatus,
     Location,
+    Meditator,
+    MeditatorTransitionEvent,
     Payment,
+    PaymentConfirmationStatus,
     Prospect,
     ProspectStatus,
     SessionStatus,
@@ -31,6 +39,64 @@ from .models import (
 from .services.invoicing import generate_invoice_for_enrollment
 from .services.enrollment_eligibility import is_eligible_for_course
 from .forms import EnrollmentForm
+
+
+def make_prospect_financially_eligible(prospect, *, user=None, amount=Decimal("500.00")):
+    """Build a paid issued invoice using the CRM's existing financial relationships."""
+    owner = user or prospect.owner
+    student, _ = Student.objects.get_or_create(
+        prospect=prospect,
+        defaults={"owner": owner},
+    )
+    teacher = Teacher.objects.create(
+        first_name="Paid",
+        last_name=f"Teacher {prospect.pk}",
+        email=f"paid.teacher.{prospect.pk}@example.com",
+    )
+    location = Location.objects.create(name=f"Paid Conversion Center {prospect.pk}")
+    course = Course.objects.create(
+        name=f"Paid Conversion Course {prospect.pk}",
+        standard_fee=amount,
+    )
+    session = CourseSession.objects.create(
+        owner=owner,
+        course=course,
+        teacher=teacher,
+        session_name=f"Paid Conversion Session {prospect.pk}",
+        start_date=timezone.now() + timedelta(days=2),
+        end_date=timezone.now() + timedelta(days=3),
+        location=location,
+        status=SessionStatus.SCHEDULED,
+    )
+    enrollment = Enrollment.objects.create(
+        student=student,
+        course=course,
+        session=session,
+        enrollment_date=timezone.now(),
+        fee_amount=amount,
+        discount_amount=Decimal("0.00"),
+    )
+    invoice = Invoice.objects.create(
+        owner=owner,
+        enrollment=enrollment,
+        invoice_number=f"PAID-CONVERSION-{prospect.pk}",
+        issue_date=timezone.localdate(),
+        due_date=timezone.localdate() + timedelta(days=14),
+        subtotal=amount,
+        discount_amount=Decimal("0.00"),
+        tax_amount=Decimal("0.00"),
+        total_amount=amount,
+        status=InvoiceStatus.PAID,
+    )
+    Payment.objects.create(
+        owner=owner,
+        invoice=invoice,
+        payment_date=timezone.now(),
+        amount_paid=amount,
+        payment_method="transfer",
+        confirmation_status=PaymentConfirmationStatus.CONFIRMED,
+    )
+    return student, invoice
 
 
 class EnrollmentFamilyDetectionUnitTests(SimpleTestCase):
@@ -103,8 +169,10 @@ class StudentDuplicatePreventionTests(TestCase):
             ),
         )
 
-        with self.assertRaises(ValidationError):
-            duplicate_candidate.convert_to_student()
+        self.assertEqual(
+            duplicate_candidate.find_potential_duplicate_student().pk,
+            first_prospect.student_record.pk,
+        )
 
         self.assertEqual(
             Student.objects.filter(
@@ -134,9 +202,10 @@ class StudentDuplicatePreventionTests(TestCase):
             ),
         )
 
+        expected_student, _ = make_prospect_financially_eligible(coincidental_name_match)
         student, created = coincidental_name_match.convert_to_student()
-        self.assertTrue(created)
-        self.assertIsNotNone(student.pk)
+        self.assertFalse(created)
+        self.assertEqual(student.pk, expected_student.pk)
         self.assertEqual(
             Student.objects.filter(
                 prospect__contact__first_name__iexact="Ava",
@@ -306,6 +375,10 @@ class ProspectQuickMessageWorkflowTests(TestCase):
                 phone_number="+1-555-212-0000",
             ),
         )
+        self.student, self.invoice = make_prospect_financially_eligible(
+            self.prospect,
+            user=self.user,
+        )
 
     def test_prospect_list_shows_send_message_action(self):
         response = self.client.get(reverse("core:prospect-list"))
@@ -365,6 +438,718 @@ class ProspectQuickMessageWorkflowTests(TestCase):
         self.assertEqual(self.prospect.converted_student_id, self.prospect.student_record.pk)
 
 
+class ProspectConversionFinancialRequirementTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="financial_gate_user",
+            password="safe-password-123",
+        )
+        self.client.force_login(self.user)
+        self.prospect = Prospect.objects.create(
+            owner=self.user,
+            contact=Contact.objects.create(
+                first_name="Financial",
+                last_name="Prospect",
+                email="financial.prospect@example.com",
+                phone_number="+233-555-0101",
+            ),
+            status=ProspectStatus.NEW,
+        )
+        self.teacher = Teacher.objects.create(
+            first_name="Finance",
+            last_name="Teacher",
+            email="finance.teacher@example.com",
+        )
+        self.location = Location.objects.create(name="Financial Gate Center")
+        self.course = Course.objects.create(
+            name="Financial Gate TM Course",
+            standard_fee=Decimal("500.00"),
+        )
+        self.session = CourseSession.objects.create(
+            owner=self.user,
+            course=self.course,
+            teacher=self.teacher,
+            session_name="Financial Gate Session",
+            start_date=timezone.now() + timedelta(days=2),
+            end_date=timezone.now() + timedelta(days=3),
+            location=self.location,
+            status=SessionStatus.SCHEDULED,
+        )
+
+    def _issue_invoice(self, *, status=InvoiceStatus.SENT, total=Decimal("500.00")):
+        student, _ = Student.objects.get_or_create(
+            prospect=self.prospect,
+            defaults={"owner": self.user},
+        )
+        enrollment, _ = Enrollment.objects.get_or_create(
+            student=student,
+            session=self.session,
+            defaults={
+                "course": self.course,
+                "enrollment_date": timezone.now(),
+                "fee_amount": total,
+                "discount_amount": Decimal("0.00"),
+            },
+        )
+        invoice, _ = Invoice.objects.get_or_create(
+            enrollment=enrollment,
+            defaults={
+                "owner": self.user,
+                "invoice_number": f"FIN-GATE-{self.prospect.pk}",
+                "issue_date": timezone.localdate(),
+                "due_date": timezone.localdate() + timedelta(days=14),
+                "subtotal": total,
+                "discount_amount": Decimal("0.00"),
+                "tax_amount": Decimal("0.00"),
+                "total_amount": total,
+                "status": status,
+            },
+        )
+        if invoice.status != status:
+            invoice.status = status
+            invoice.save(update_fields=["status", "updated_at"])
+        return invoice, student
+
+    def _record_payment(self, invoice, amount, *, confirmation_status=PaymentConfirmationStatus.CONFIRMED):
+        return Payment.objects.create(
+            owner=self.user,
+            invoice=invoice,
+            payment_date=timezone.now(),
+            amount_paid=amount,
+            payment_method="transfer",
+            confirmation_status=confirmation_status,
+        )
+
+    def _assert_not_converted(self, *, expected_student_count):
+        self.prospect.refresh_from_db()
+        self.assertEqual(self.prospect.status, ProspectStatus.NEW)
+        self.assertFalse(self.prospect.converted_to_student)
+        self.assertIsNone(self.prospect.converted_student_id)
+        self.assertIsNone(self.prospect.converted_at)
+        self.assertEqual(Student.objects.filter(prospect=self.prospect).count(), expected_student_count)
+
+    def test_prospect_with_no_invoice_is_rejected(self):
+        response = self.client.post(
+            reverse("core:prospect-convert-to-student", kwargs={"pk": self.prospect.pk}),
+            data={"next": reverse("core:prospect-list")},
+            follow=True,
+        )
+
+        self.assertContains(response, "Cannot convert this prospect: no donation statement has been issued.")
+        self._assert_not_converted(expected_student_count=0)
+
+    @patch("core.services.invoicing.send_invoice_email", return_value=True)
+    @patch("core.services.invoicing._generate_and_save_invoice_pdf", return_value=True)
+    def test_enrollment_creates_invoice_shell_without_premature_conversion(
+        self,
+        _pdf_mock,
+        _email_mock,
+    ):
+        response = self.client.post(
+            reverse("core:enrollment-create"),
+            data={
+                "person_type": "prospect",
+                "prospect": self.prospect.pk,
+                "student": "",
+                "contact": "",
+                "course": self.course.pk,
+                "session": self.session.pk,
+                "enrollment_date": timezone.localdate().isoformat(),
+                "status": EnrollmentStatus.ENROLLED,
+                "fee_amount": "500.00",
+                "discount_amount": "0.00",
+                "number_of_children_under_18": "0",
+                "balance_due": "500.00",
+                "notes": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        student = Student.objects.get(prospect=self.prospect)
+        invoice = Invoice.objects.get(enrollment__student=student)
+        self.prospect.refresh_from_db()
+        self.assertEqual(self.prospect.status, ProspectStatus.NEW)
+        self.assertFalse(self.prospect.converted_to_student)
+        self.assertIsNone(self.prospect.converted_student_id)
+        self.assertIsNone(self.prospect.converted_at)
+        self.assertEqual(invoice.status, InvoiceStatus.SENT)
+
+        self._record_payment(invoice, Decimal("500.00"))
+        converted_student, created = self.prospect.convert_to_student()
+
+        self.assertFalse(created)
+        self.assertEqual(converted_student.pk, student.pk)
+        self.prospect.refresh_from_db()
+        self.assertEqual(self.prospect.status, ProspectStatus.CONVERTED)
+        self.assertTrue(self.prospect.converted_to_student)
+
+    def test_unissued_invoice_is_rejected(self):
+        self._issue_invoice(status=InvoiceStatus.DRAFT)
+        response = self.client.post(
+            reverse("core:prospect-convert-to-student", kwargs={"pk": self.prospect.pk}),
+            data={"next": reverse("core:prospect-list")},
+            follow=True,
+        )
+
+        self.assertContains(response, "Cannot convert this prospect: the donation statement has not been issued.")
+        self._assert_not_converted(expected_student_count=1)
+
+    def test_issued_invoice_without_payment_is_rejected(self):
+        self._issue_invoice()
+        response = self.client.post(
+            reverse("core:prospect-convert-to-student", kwargs={"pk": self.prospect.pk}),
+            data={"next": reverse("core:prospect-list")},
+            follow=True,
+        )
+
+        self.assertContains(response, "Cannot convert this prospect: payment has not been received.")
+        self._assert_not_converted(expected_student_count=1)
+
+    def test_pending_payment_does_not_count_as_received(self):
+        invoice, _ = self._issue_invoice()
+        self._record_payment(
+            invoice,
+            Decimal("500.00"),
+            confirmation_status=PaymentConfirmationStatus.PENDING,
+        )
+        response = self.client.post(
+            reverse("core:prospect-convert-to-student", kwargs={"pk": self.prospect.pk}),
+            follow=True,
+        )
+
+        self.assertContains(response, "Cannot convert this prospect: payment has not been received.")
+        self._assert_not_converted(expected_student_count=1)
+
+    def test_partial_payment_is_rejected_with_outstanding_balance(self):
+        invoice, _ = self._issue_invoice()
+        self._record_payment(invoice, Decimal("250.00"))
+        response = self.client.post(
+            reverse("core:prospect-convert-to-student", kwargs={"pk": self.prospect.pk}),
+            data={"next": reverse("core:prospect-list")},
+            follow=True,
+        )
+
+        self.assertContains(
+            response,
+            "Cannot convert this prospect: the donation statement has an outstanding balance of GHS 250.00.",
+        )
+        self._assert_not_converted(expected_student_count=1)
+
+    def test_fully_paid_invoice_allows_conversion(self):
+        invoice, student = self._issue_invoice()
+        self._record_payment(invoice, Decimal("500.00"))
+        response = self.client.post(
+            reverse("core:prospect-convert-to-student", kwargs={"pk": self.prospect.pk}),
+            data={"next": reverse("core:prospect-list")},
+        )
+
+        self.assertRedirects(response, reverse("core:student-detail", kwargs={"pk": student.pk}))
+        self.prospect.refresh_from_db()
+        self.assertEqual(self.prospect.status, ProspectStatus.CONVERTED)
+        self.assertTrue(self.prospect.converted_to_student)
+        self.assertEqual(self.prospect.converted_student_id, student.pk)
+        self.assertEqual(Student.objects.filter(prospect=self.prospect).count(), 1)
+
+    def test_fully_paid_reconversion_reactivates_historical_student(self):
+        invoice, student = self._issue_invoice()
+        Student.objects.filter(pk=student.pk).update(
+            enrollment_status=EnrollmentStatus.INACTIVE
+        )
+        self._record_payment(invoice, Decimal("500.00"))
+
+        self.prospect.convert_to_student()
+
+        student.refresh_from_db()
+        self.assertEqual(student.enrollment_status, EnrollmentStatus.PENDING)
+        self.assertEqual(Student.objects.filter(prospect=self.prospect).count(), 1)
+
+    def test_direct_pipeline_post_without_payment_is_rejected(self):
+        self._issue_invoice()
+        response = self.client.post(
+            reverse("core:prospect-pipeline-convert", kwargs={"pk": self.prospect.pk}),
+            follow=True,
+        )
+
+        self.assertContains(response, "Cannot convert this prospect: payment has not been received.")
+        self._assert_not_converted(expected_student_count=1)
+
+    def test_repeated_failed_attempt_does_not_convert_or_duplicate(self):
+        for _ in range(2):
+            response = self.client.post(
+                reverse("core:prospect-convert-to-student", kwargs={"pk": self.prospect.pk}),
+                data={"next": reverse("core:prospect-list")},
+            )
+            self.assertEqual(response.status_code, 302)
+
+        self._assert_not_converted(expected_student_count=0)
+
+    def test_prospect_list_disables_conversion_when_payment_is_required(self):
+        response = self.client.get(reverse("core:prospect-list"))
+        self.assertContains(response, "Invoice/payment required")
+        self.assertNotContains(
+            response,
+            f'action="{reverse("core:prospect-convert-to-student", kwargs={"pk": self.prospect.pk})}"',
+        )
+
+    def test_prospect_list_shows_conversion_action_when_fully_paid(self):
+        invoice, _ = self._issue_invoice()
+        self._record_payment(invoice, Decimal("500.00"))
+        response = self.client.get(reverse("core:prospect-list"))
+        self.assertContains(
+            response,
+            f'action="{reverse("core:prospect-convert-to-student", kwargs={"pk": self.prospect.pk})}"',
+        )
+
+
+class CleanupInvalidStudentsCommandTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="cleanup_command_user",
+            password="safe-password-123",
+        )
+
+    def _invalid_student_without_dependencies(self, suffix="one"):
+        prospect = Prospect.objects.create(
+            owner=self.user,
+            contact=Contact.objects.create(
+                first_name="Cleanup",
+                last_name=suffix.title(),
+                email=f"cleanup.{suffix}@example.com",
+            ),
+            status=ProspectStatus.CONVERTED,
+            converted_to_student=True,
+        )
+        student = Student.objects.create(owner=self.user, prospect=prospect)
+        prospect.converted_student = student
+        prospect.converted_at = timezone.now()
+        prospect.save(
+            update_fields=["converted_student", "converted_at", "updated_at"]
+        )
+        return prospect, student
+
+    def test_dry_run_reports_identifiers_financials_reason_and_does_not_modify(self):
+        prospect, student = self._invalid_student_without_dependencies()
+        output = StringIO()
+
+        call_command(
+            "cleanup_invalid_students",
+            "--dry-run",
+            "--student-id",
+            str(student.pk),
+            stdout=output,
+        )
+
+        rendered = output.getvalue()
+        self.assertIn(f"Student ID={student.pk}", rendered)
+        self.assertIn(f"UUID={student.uuid}", rendered)
+        self.assertIn(f"Prospect ID={prospect.pk}", rendered)
+        self.assertIn(f"Contact ID={prospect.contact_id}", rendered)
+        self.assertIn("Invoice ID=-", rendered)
+        self.assertIn("Amount=GHS 0.00", rendered)
+        self.assertIn("Total payment received at conversion=GHS 0.00", rendered)
+        self.assertIn("Outstanding at conversion=GHS 0.00", rendered)
+        self.assertIn("Violation=no_invoice", rendered)
+        self.assertIn("Dry run only: no database records were modified.", rendered)
+        self.assertTrue(Student.objects.filter(pk=student.pk).exists())
+        prospect.refresh_from_db()
+        self.assertTrue(prospect.converted_to_student)
+
+    def test_command_defaults_to_dry_run(self):
+        _, student = self._invalid_student_without_dependencies("default")
+        output = StringIO()
+
+        call_command(
+            "cleanup_invalid_students",
+            "--student-id",
+            str(student.pk),
+            stdout=output,
+        )
+
+        self.assertIn("Mode: DRY RUN", output.getvalue())
+        self.assertTrue(Student.objects.filter(pk=student.pk).exists())
+
+    def test_verify_passes_when_active_converted_student_is_fully_paid(self):
+        prospect, student = self._invalid_student_without_dependencies("verified")
+        make_prospect_financially_eligible(prospect, user=self.user)
+        output = StringIO()
+
+        call_command("cleanup_invalid_students", "--verify", stdout=output)
+
+        rendered = output.getvalue()
+        self.assertIn("Active converted Students: 1", rendered)
+        self.assertIn("Financially eligible active Students: 1", rendered)
+        self.assertIn("Missing required invoice: 0", rendered)
+        self.assertIn("Unpaid/outstanding invoice: 0", rendered)
+        self.assertIn("VERIFICATION PASSED", rendered)
+        self.assertTrue(Student.objects.filter(pk=student.pk).exists())
+
+    def test_verify_fails_read_only_for_active_student_without_invoice(self):
+        prospect, student = self._invalid_student_without_dependencies(
+            "verify-failure"
+        )
+        output = StringIO()
+
+        with self.assertRaisesMessage(CommandError, "VERIFICATION FAILED"):
+            call_command("cleanup_invalid_students", "--verify", stdout=output)
+
+        rendered = output.getvalue()
+        self.assertIn("Missing required invoice: 1", rendered)
+        self.assertIn(f"Student ID={student.pk}", rendered)
+        self.assertTrue(Student.objects.filter(pk=student.pk).exists())
+        prospect.refresh_from_db()
+        self.assertTrue(prospect.converted_to_student)
+
+    def test_dry_run_does_not_target_preconversion_student_shell(self):
+        prospect = Prospect.objects.create(
+            owner=self.user,
+            contact=Contact.objects.create(
+                first_name="Preconversion",
+                last_name="Student",
+                email="preconversion.student@example.com",
+            ),
+            status=ProspectStatus.QUALIFIED,
+        )
+        student = Student.objects.create(owner=self.user, prospect=prospect)
+        output = StringIO()
+
+        call_command(
+            "cleanup_invalid_students",
+            "--dry-run",
+            "--student-id",
+            str(student.pk),
+            stdout=output,
+        )
+
+        rendered = output.getvalue()
+        self.assertIn("Not marked as converted: 1", rendered)
+        self.assertIn("Violating: 0", rendered)
+        self.assertNotIn(f"Student ID={student.pk}", rendered)
+        self.assertTrue(Student.objects.filter(pk=student.pk).exists())
+
+    def test_dry_run_reports_invoice_payment_balance_and_violation_reason(self):
+        prospect, _ = self._invalid_student_without_dependencies("partial")
+        student, invoice = make_prospect_financially_eligible(
+            prospect,
+            user=self.user,
+        )
+        payment = invoice.payments.get()
+        payment.amount_paid = Decimal("125.00")
+        payment.save(update_fields=["amount_paid", "updated_at"])
+        prospect.converted_at = timezone.now()
+        prospect.save(update_fields=["converted_at", "updated_at"])
+        output = StringIO()
+
+        call_command(
+            "cleanup_invalid_students",
+            "--dry-run",
+            "--student-id",
+            str(student.pk),
+            stdout=output,
+        )
+
+        rendered = output.getvalue()
+        self.assertIn(f"Invoice ID={invoice.pk}", rendered)
+        self.assertIn("Amount=GHS 500.00", rendered)
+        self.assertIn("Total payment received at conversion=GHS 125.00", rendered)
+        self.assertIn("Outstanding at conversion=GHS 375.00", rendered)
+        self.assertIn("Violation=partial_or_outstanding", rendered)
+        self.assertIn("outstanding balance at conversion was GHS 375.00", rendered)
+        self.assertTrue(Student.objects.filter(pk=student.pk).exists())
+
+    def test_execute_requires_explicit_student_ids(self):
+        self._invalid_student_without_dependencies("guarded")
+        with self.assertRaises(CommandError):
+            call_command(
+                "cleanup_invalid_students",
+                "--execute",
+                "--confirm-count",
+                "1",
+            )
+
+    def test_execute_requires_exact_confirmation_count(self):
+        _, student = self._invalid_student_without_dependencies("count")
+        with self.assertRaises(CommandError):
+            call_command(
+                "cleanup_invalid_students",
+                "--execute",
+                "--student-id",
+                str(student.pk),
+                "--confirm-count",
+                "2",
+            )
+
+    def test_integrity_error_rolls_back_entire_selected_cleanup(self):
+        first_prospect, first_student = self._invalid_student_without_dependencies(
+            "rollback-first"
+        )
+        second_prospect, second_student = self._invalid_student_without_dependencies(
+            "rollback-second"
+        )
+        from core.management.commands import cleanup_invalid_students as command_module
+
+        real_cleanup = command_module.safely_revert_invalid_student
+        calls = 0
+
+        def fail_on_second(student_id, *, revert_status):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise IntegrityError("simulated dependent integrity failure")
+            return real_cleanup(student_id, revert_status=revert_status)
+
+        with patch.object(
+            command_module,
+            "safely_revert_invalid_student",
+            side_effect=fail_on_second,
+        ):
+            output = StringIO()
+            with self.assertRaisesMessage(
+                CommandError,
+                "entire cleanup transaction was rolled back",
+            ):
+                call_command(
+                    "cleanup_invalid_students",
+                    "--execute",
+                    "--student-id",
+                    str(first_student.pk),
+                    "--student-id",
+                    str(second_student.pk),
+                    "--confirm-count",
+                    "2",
+                    stdout=output,
+                )
+
+        self.assertTrue(Student.objects.filter(pk=first_student.pk).exists())
+        self.assertTrue(Student.objects.filter(pk=second_student.pk).exists())
+        first_prospect.refresh_from_db()
+        second_prospect.refresh_from_db()
+        self.assertTrue(first_prospect.converted_to_student)
+        self.assertTrue(second_prospect.converted_to_student)
+        self.assertEqual(first_prospect.status, ProspectStatus.CONVERTED)
+        self.assertEqual(second_prospect.status, ProspectStatus.CONVERTED)
+
+    def test_execute_reverts_reviewed_dependency_free_student(self):
+        prospect, student = self._invalid_student_without_dependencies("safe")
+        contact_id = prospect.contact_id
+        Prospect.objects.filter(pk=prospect.pk).update(is_archived=True)
+        output = StringIO()
+
+        call_command(
+            "cleanup_invalid_students",
+            "--execute",
+            "--student-id",
+            str(student.pk),
+            "--confirm-count",
+            "1",
+            stdout=output,
+        )
+
+        self.assertFalse(Student.objects.filter(pk=student.pk).exists())
+        self.assertTrue(Contact.objects.filter(pk=contact_id).exists())
+        prospect.refresh_from_db()
+        self.assertEqual(prospect.status, ProspectStatus.QUALIFIED)
+        self.assertFalse(prospect.is_archived)
+        self.assertFalse(prospect.converted_to_student)
+        self.assertIsNone(prospect.converted_student_id)
+        self.assertIsNone(prospect.converted_at)
+        self.assertEqual(Contact.objects.filter(pk=contact_id).count(), 1)
+        self.assertEqual(Prospect.objects.filter(contact_id=contact_id).count(), 1)
+        rendered = output.getvalue()
+        self.assertIn(f"REUSE Contact #{contact_id}", rendered)
+        self.assertIn(f"REACTIVATE existing Prospect #{prospect.pk}", rendered)
+        self.assertIn("empty Student shell removed", rendered)
+        self.assertIn("no Contact or Prospect created", rendered)
+        self.assertIn("Contact, Prospect, donation statement/invoice", rendered)
+
+    def test_execute_restores_prospect_and_preserves_student_financial_history(self):
+        prospect, _ = self._invalid_student_without_dependencies("dependent")
+        student, invoice = make_prospect_financially_eligible(
+            prospect,
+            user=self.user,
+        )
+        payment = invoice.payments.get()
+        payment.amount_paid = Decimal("250.00")
+        payment.save(update_fields=["amount_paid", "updated_at"])
+        student.notes = "Legitimate historical Student note."
+        student.save(update_fields=["notes", "updated_at"])
+        communication = Communication.objects.create(
+            owner=self.user,
+            recipient_type="student",
+            student=student,
+            enrollment=invoice.enrollment,
+            channel="email",
+            communication_type="follow_up",
+            subject="Day 3 check-in",
+            body="Historical check-in communication.",
+            sent_at=timezone.now(),
+            delivery_status="sent",
+            notes="Preserve this communication note.",
+        )
+        prospect.converted_at = timezone.now()
+        prospect.save(update_fields=["converted_at", "updated_at"])
+        output = StringIO()
+
+        call_command(
+            "cleanup_invalid_students",
+            "--execute",
+            "--student-id",
+            str(student.pk),
+            "--confirm-count",
+            "1",
+            stdout=output,
+        )
+
+        self.assertTrue(Student.objects.filter(pk=student.pk).exists())
+        student.refresh_from_db()
+        self.assertEqual(student.enrollment_status, EnrollmentStatus.INACTIVE)
+        self.assertTrue(Enrollment.objects.filter(student=student).exists())
+        self.assertTrue(Invoice.objects.filter(pk=invoice.pk).exists())
+        self.assertTrue(Payment.objects.filter(pk=payment.pk).exists())
+        self.assertTrue(CourseSession.objects.filter(pk=invoice.enrollment.session_id).exists())
+        communication.refresh_from_db()
+        self.assertEqual(communication.student_id, student.pk)
+        self.assertIsNone(communication.prospect_id)
+        self.assertEqual(communication.recipient_type, "student")
+        self.assertEqual(communication.enrollment_id, invoice.enrollment_id)
+        prospect.refresh_from_db()
+        self.assertEqual(prospect.status, ProspectStatus.QUALIFIED)
+        self.assertFalse(prospect.is_archived)
+        self.assertFalse(prospect.converted_to_student)
+        self.assertIsNone(prospect.converted_student_id)
+        self.assertIsNone(prospect.converted_at)
+        self.assertIn("Legitimate historical Student note.", prospect.notes)
+        self.assertEqual(Contact.objects.filter(pk=prospect.contact_id).count(), 1)
+        self.assertEqual(Prospect.objects.filter(contact_id=prospect.contact_id).count(), 1)
+        self.assertIn(f"Existing Prospect #{prospect.pk} restored", output.getvalue())
+        self.assertIn("no Contact or Prospect created", output.getvalue())
+        self.assertIn("'donation_statements_invoices': 1", output.getvalue())
+        self.assertIn("'payments': 1", output.getvalue())
+        self.assertIn("'attendance_check_ins': 1", output.getvalue())
+        self.assertIn("retain the Student as inactive historical parent", output.getvalue())
+        self.assertIn(
+            f"DonationStatement/Invoice ID={invoice.pk} | "
+            "Action=PRESERVE as accounting history",
+            output.getvalue(),
+        )
+        self.assertIn(
+            f"Payment ID={payment.pk} | Action=PRESERVE as accounting history",
+            output.getvalue(),
+        )
+        self.assertIn(
+            f"Attendance/Check-in Communication ID={communication.pk} | "
+            "Action=PRESERVE original Student link",
+            output.getvalue(),
+        )
+
+        second_output = StringIO()
+        call_command(
+            "cleanup_invalid_students",
+            "--dry-run",
+            "--student-id",
+            str(student.pk),
+            stdout=second_output,
+        )
+        self.assertIn("Violating: 0", second_output.getvalue())
+        self.assertIn("Already restored to Prospect: 1", second_output.getvalue())
+
+    def test_execute_reassigns_communication_before_removing_empty_student_shell(self):
+        prospect, student = self._invalid_student_without_dependencies("communication")
+        communication = Communication.objects.create(
+            owner=self.user,
+            recipient_type="student",
+            student=student,
+            channel="email",
+            communication_type="general",
+            subject="Conversion-only Student communication",
+            body="Preserve this on the restored Prospect.",
+            delivery_status="sent",
+        )
+        output = StringIO()
+
+        call_command(
+            "cleanup_invalid_students",
+            "--execute",
+            "--student-id",
+            str(student.pk),
+            "--confirm-count",
+            "1",
+            stdout=output,
+        )
+
+        self.assertFalse(Student.objects.filter(pk=student.pk).exists())
+        communication.refresh_from_db()
+        self.assertIsNone(communication.student_id)
+        self.assertEqual(communication.prospect_id, prospect.pk)
+        self.assertEqual(communication.recipient_type, "prospect")
+        self.assertIn("preserve and reassign communications", output.getvalue())
+        self.assertIn(
+            f"Communication ID={communication.pk} | Action=REASSIGN to "
+            "existing Prospect before Student removal",
+            output.getvalue(),
+        )
+
+    def test_meditator_lifecycle_is_flagged_invalidated_and_preserved_for_audit(self):
+        prospect, student = self._invalid_student_without_dependencies("meditator")
+        meditator = Meditator.objects.create(
+            student=student,
+            metadata={"original_transition_evidence": "preserve"},
+        )
+        event = MeditatorTransitionEvent.objects.create(
+            student=student,
+            meditator=meditator,
+            metadata={"event_evidence": "preserve"},
+        )
+        dry_run = StringIO()
+
+        call_command(
+            "cleanup_invalid_students",
+            "--dry-run",
+            "--student-id",
+            str(student.pk),
+            stdout=dry_run,
+        )
+
+        rendered = dry_run.getvalue()
+        self.assertIn("SERIOUS INTEGRITY VIOLATION", rendered)
+        self.assertIn(f"Meditator ID={meditator.pk}", rendered)
+        self.assertIn("INVALIDATE active lifecycle", rendered)
+        self.assertTrue(Meditator.objects.get(pk=meditator.pk).is_active)
+
+        executed = StringIO()
+        call_command(
+            "cleanup_invalid_students",
+            "--execute",
+            "--student-id",
+            str(student.pk),
+            "--confirm-count",
+            "1",
+            stdout=executed,
+        )
+
+        student.refresh_from_db()
+        self.assertEqual(student.enrollment_status, EnrollmentStatus.INACTIVE)
+        meditator.refresh_from_db()
+        self.assertFalse(meditator.is_active)
+        self.assertIsNotNone(meditator.invalidated_at)
+        self.assertIn("Student lifecycle was invalid", meditator.invalidation_reason)
+        self.assertEqual(
+            meditator.metadata["original_transition_evidence"],
+            "preserve",
+        )
+        self.assertEqual(len(meditator.metadata["integrity_invalidations"]), 1)
+        self.assertTrue(MeditatorTransitionEvent.objects.filter(pk=event.pk).exists())
+        self.assertEqual(
+            MeditatorTransitionEvent.objects.get(pk=event.pk).metadata["event_evidence"],
+            "preserve",
+        )
+        prospect.refresh_from_db()
+        self.assertEqual(prospect.status, ProspectStatus.QUALIFIED)
+        self.assertIn("Active Meditator lifecycle invalidated", executed.getvalue())
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("core:meditator-list"))
+        self.assertNotContains(response, meditator.public_id)
+
 class ProspectConversionStateVisibilityTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(
@@ -382,6 +1167,10 @@ class ProspectConversionStateVisibilityTests(TestCase):
             ),
             status=ProspectStatus.NEW,
             notes="Ready for conversion",
+        )
+        self.student, self.invoice = make_prospect_financially_eligible(
+            self.prospect,
+            user=self.user,
         )
 
     def test_default_prospect_list_hides_converted(self):
@@ -643,6 +1432,68 @@ class ContactAutocompleteEndpointTests(TestCase):
         self.assertEqual(contact.phone_number, "+1-555-987-0000")
         prospect = Prospect.objects.get(contact=contact)
         self.assertEqual(prospect.contact_id, contact.pk)
+
+    def test_new_contact_mode_ignores_stale_selected_contact(self):
+        existing_contact = Contact.objects.create(
+            first_name="James",
+            last_name="Baldwin",
+            email="james@example.com",
+        )
+        Prospect.objects.create(owner=self.user, contact=existing_contact)
+
+        response = self.client.post(
+            reverse("core:prospect-create"),
+            data={
+                "prospect_is_existing_contact": "",
+                "selected_contact": str(existing_contact.pk),
+                "first_name": "Bruce",
+                "last_name": "Willis",
+                "email": "bruce@example.com",
+                "phone_number": "+1-555-123-4567",
+                "preferred_contact_method": "email",
+                "source": "Referral",
+                "status": ProspectStatus.NEW,
+                "interest_level": "medium",
+                "notes": "New prospect after changing contact mode",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        prospect = Prospect.objects.get(contact__email="bruce@example.com")
+        self.assertEqual(prospect.contact.first_name, "Bruce")
+        self.assertEqual(prospect.contact.last_name, "Willis")
+        self.assertNotEqual(prospect.contact_id, existing_contact.pk)
+
+    def test_shared_phone_number_does_not_merge_different_people(self):
+        shared_phone = "+1-555-123-4567"
+        james_contact = Contact.objects.create(
+            first_name="James",
+            last_name="Baldwin",
+            email="james@example.com",
+            phone_number=shared_phone,
+        )
+        Prospect.objects.create(owner=self.user, contact=james_contact)
+
+        response = self.client.post(
+            reverse("core:prospect-create"),
+            data={
+                "first_name": "Bruce",
+                "last_name": "Willis",
+                "email": "bruce@example.com",
+                "phone_number": shared_phone,
+                "preferred_contact_method": "phone",
+                "source": "Referral",
+                "status": ProspectStatus.NEW,
+                "interest_level": "medium",
+                "notes": "Shares a household phone number",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        bruce_prospect = Prospect.objects.get(contact__email="bruce@example.com")
+        self.assertEqual(bruce_prospect.contact.first_name, "Bruce")
+        self.assertEqual(bruce_prospect.contact.phone_number, shared_phone)
+        self.assertNotEqual(bruce_prospect.contact_id, james_contact.pk)
 
 
 class ProspectBadLeadRuleTests(TestCase):
@@ -1054,6 +1905,49 @@ class PaymentCreateInvoiceFilteringTests(TestCase):
         self.assertEqual(form.fields["invoice"].queryset.count(), 0)
         self.assertTrue(form.fields["invoice"].disabled)
         self.assertContains(response, "Select a student to see available invoices.")
+
+    def test_payment_page_uses_ajax_student_search_without_global_dropdown(self):
+        response = self.client.get(reverse("core:payment-create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="payment-student-search"')
+        self.assertContains(response, 'placeholder="Search for a student..."')
+        self.assertContains(response, 'id="id_student"')
+        self.assertNotContains(response, '<select name="student"')
+        self.assertNotContains(response, "Ari Khan")
+        self.assertNotContains(response, "Bea Stone")
+
+    def test_payment_student_search_matches_identity_and_only_returns_open_invoices(self):
+        contact = self.student_a.prospect.contact
+        contact.email = "ari.khan@example.com"
+        contact.phone_number = "+1 514 555 0188"
+        contact.save(update_fields=["email", "phone_number"])
+
+        for query in ("Ari Khan", "ari.khan@example.com", "555 0188"):
+            with self.subTest(query=query):
+                response = self.client.get(
+                    reverse("core:payment-student-search"),
+                    {"q": query},
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    [item["id"] for item in response.json()["results"]],
+                    [self.student_a.pk],
+                )
+
+        Payment.objects.create(
+            owner=self.user,
+            invoice=self.invoice_a,
+            payment_date=timezone.now(),
+            amount_paid="200.00",
+            payment_method="cash",
+            confirmation_status="confirmed",
+        )
+        paid_response = self.client.get(
+            reverse("core:payment-student-search"),
+            {"q": "Ari Khan"},
+        )
+        self.assertEqual(paid_response.json()["results"], [])
 
     def test_ajax_invoice_lookup_returns_only_selected_student_open_invoices(self):
         response = self.client.get(

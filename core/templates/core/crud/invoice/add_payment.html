@@ -21,13 +21,13 @@
     <div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Student</div><div class="fw-semibold">{{ student.prospect|default:student }}</div></div></div>
   </div>
   <div class="col-md-6 col-lg-2">
-    <div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Total</div><div class="fw-semibold">${{ invoice.total_amount|floatformat:2 }}</div></div></div>
+    <div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Total</div><div class="fw-semibold">GHS {{ invoice.total_amount|floatformat:2 }}</div></div></div>
   </div>
   <div class="col-md-6 col-lg-2">
-    <div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Paid</div><div class="fw-semibold">${{ total_paid|floatformat:2 }}</div></div></div>
+    <div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Paid</div><div class="fw-semibold">GHS {{ total_paid|floatformat:2 }}</div></div></div>
   </div>
   <div class="col-md-6 col-lg-2">
-    <div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Outstanding</div><div class="fw-semibold text-warning">${{ outstanding_balance|floatformat:2 }}</div></div></div>
+    <div class="card h-100 shadow-sm"><div class="card-body"><div class="text-muted small">Outstanding</div><div class="fw-semibold text-warning">GHS {{ outstanding_balance|floatformat:2 }}</div></div></div>
   </div>
 </div>
 

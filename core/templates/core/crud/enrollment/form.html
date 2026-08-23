@@ -159,11 +159,18 @@
       const value = personType.value;
       const searchEnabled = value === "student" || value === "prospect" || value === "contact";
       searchWrap.classList.toggle("d-none", !searchEnabled);
-      newProspectWrap.classList.toggle("d-none", value !== "new_prospect");
+      const showNewPersonFields = value === "new_prospect" || value === "new_contact";
+      newProspectWrap.classList.toggle("d-none", !showNewPersonFields);
       if (!searchEnabled) {
         searchResults.innerHTML = "";
         selectedPerson.classList.add("d-none");
       }
+      const placeholders = {
+        student: "Search for a student...",
+        prospect: "Search for a prospect...",
+        contact: "Search for a contact...",
+      };
+      searchInput.placeholder = placeholders[value] || "Search for a person...";
       checkEligibility();
     }
 
@@ -176,12 +183,20 @@
         return;
       }
       const params = new URLSearchParams({ type: value, q });
+      if (value === "student") {
+        if (!courseSelect.value) {
+          searchResults.innerHTML = '<div class="list-group-item text-muted">Select a course before searching for a student.</div>';
+          return;
+        }
+        params.set("course_id", courseSelect.value);
+        if (sessionSelect && sessionSelect.value) params.set("session_id", sessionSelect.value);
+      }
       searchResults.innerHTML = '<div class="list-group-item text-muted">Searching...</div>';
       const response = await fetch(`${searchUrl}?${params.toString()}`, { headers: { "X-Requested-With": "XMLHttpRequest" } });
       const payload = await response.json();
       const items = payload.results || [];
       if (!items.length) {
-        searchResults.innerHTML = '<div class="list-group-item text-muted">No matches found.</div>';
+        searchResults.innerHTML = `<div class="list-group-item text-muted">${payload.message || "No eligible matches found."}</div>`;
         return;
       }
       searchResults.innerHTML = "";
@@ -202,6 +217,11 @@
 
     async function loadSessionsForCourse() {
       const courseId = courseSelect.value;
+      if (personType.value === "student" && hiddenStudent.value) {
+        hiddenStudent.value = "";
+        selectedPerson.classList.add("d-none");
+        selectedPerson.textContent = "";
+      }
       if (sessionSelect) sessionSelect.value = "";
       if (!courseId) {
         recalcMoney();

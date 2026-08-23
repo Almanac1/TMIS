@@ -11,6 +11,11 @@
   <div class="d-flex flex-wrap gap-2">
     <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
     <a class="btn btn-secondary" href="{% url update_url_name object.pk %}">Edit</a>
+    <a class="btn btn-outline-primary" href="{% url 'core:invoice-download-pdf' object.pk %}">Download PDF</a>
+    <form method="post" action="{% url 'core:invoice-resend-email' object.pk %}" class="d-inline">
+      {% csrf_token %}
+      <button class="btn btn-outline-primary" type="submit">Resend Invoice Email</button>
+    </form>
     {% if can_add_payment %}
       <a class="btn btn-primary" href="{% url 'core:add_invoice_payment' object.pk %}">Record Additional Payment</a>
     {% else %}
@@ -65,7 +70,7 @@
       <div class="card-body">
         <div class="text-muted small">Outstanding Balance</div>
         <div class="fw-semibold {% if outstanding_balance > 0 %}text-warning{% else %}text-success{% endif %}">
-          ${{ outstanding_balance|floatformat:2 }}
+          ₵{{ outstanding_balance|floatformat:2 }}
         </div>
       </div>
     </div>
@@ -86,25 +91,25 @@
     <div class="row g-3">
       <div class="col-md-6">
         <div class="text-muted small">Fee Amount (Subtotal)</div>
-        <div class="fw-semibold">${{ object.subtotal|floatformat:2 }}</div>
+        <div class="fw-semibold">₵{{ object.subtotal|floatformat:2 }}</div>
       </div>
       <div class="col-md-6">
         <div class="text-muted small">Discount</div>
-        <div class="fw-semibold">${{ object.discount_amount|floatformat:2 }}</div>
+        <div class="fw-semibold">₵{{ object.discount_amount|floatformat:2 }}</div>
       </div>
       <div class="col-md-6">
         <div class="text-muted small">Total Amount</div>
-        <div class="fw-semibold">${{ object.total_amount|floatformat:2 }}</div>
+        <div class="fw-semibold">₵{{ object.total_amount|floatformat:2 }}</div>
       </div>
       <div class="col-md-6">
         <div class="text-muted small">Balance Due</div>
         <div class="fw-semibold {% if outstanding_balance > 0 %}text-warning{% else %}text-success{% endif %}">
-          ${{ outstanding_balance|floatformat:2 }}
+          ₵{{ outstanding_balance|floatformat:2 }}
         </div>
       </div>
       <div class="col-md-6">
         <div class="text-muted small">Payments Made</div>
-        <div class="fw-semibold">${{ total_paid|floatformat:2 }}</div>
+        <div class="fw-semibold">₵{{ total_paid|floatformat:2 }}</div>
       </div>
     </div>
   </div>
@@ -127,7 +132,7 @@
         {% for payment in payments %}
           <tr>
             <td>{{ payment.payment_date|date:"M d, Y g:i A" }}</td>
-            <td>${{ payment.amount_paid|floatformat:2 }}</td>
+            <td>₵{{ payment.amount_paid|floatformat:2 }}</td>
             <td>{{ payment.get_payment_method_display }}</td>
             <td>{{ payment.reference_number|default:"-" }}</td>
             <td>{{ payment.get_confirmation_status_display }}</td>

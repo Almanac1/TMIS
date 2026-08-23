@@ -35,6 +35,28 @@
   <div class="card-body">
     <form method="post" novalidate>
       {% csrf_token %}
+      {% if not object %}
+        <div class="mb-3">
+          <label for="payment-student-search" class="form-label">Student</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input
+              id="payment-student-search"
+              type="search"
+              class="form-control{% if form.student.errors %} is-invalid{% endif %}"
+              placeholder="Search for a student..."
+              autocomplete="off"
+              value="{% if selected_student %}{{ selected_student.first_name }} {{ selected_student.last_name }}{% endif %}"
+            >
+          </div>
+          <div class="form-text">Type at least 2 characters. Search by name, email, or phone.</div>
+          {% for error in form.student.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+          <div id="payment-student-results" class="list-group mt-2"></div>
+          <div id="payment-selected-student" class="alert alert-light border py-2 mt-2 mb-0{% if not selected_student %} d-none{% endif %}">
+            {% if selected_student %}{{ selected_student.first_name }} {{ selected_student.last_name }} | Prospect #{{ selected_student.prospect_id }}{% endif %}
+          </div>
+        </div>
+      {% endif %}
       {{ form|crispy }}
       <div class="d-flex gap-2 mt-3">
         <button class="btn btn-primary" type="submit" {% if no_open_invoices and not object %}disabled{% endif %}>
@@ -62,6 +84,10 @@
     if (!createMode) return;
 
     const baseUrl = "{{ invoice_lookup_base_url }}";
+    const studentSearchUrl = "{% url 'core:payment-student-search' %}";
+    const searchInput = document.getElementById("payment-student-search");
+    const searchResults = document.getElementById("payment-student-results");
+    const selectedStudent = document.getElementById("payment-selected-student");
     const amountPaid = document.getElementById("id_amount_paid");
     const paymentMethod = document.getElementById("id_payment_method");
     const confirmationStatus = document.getElementById("id_confirmation_status");
@@ -123,9 +149,58 @@
       }
     }
 
+    let searchTimer = null;
+    async function searchStudents() {
+      const q = (searchInput.value || "").trim();
+      if (q.length < 2) {
+        searchResults.innerHTML = "";
+        return;
+      }
+      searchResults.innerHTML = '<div class="list-group-item text-muted">Searching...</div>';
+      try {
+        const params = new URLSearchParams({ q });
+        const response = await fetch(`${studentSearchUrl}?${params.toString()}`, {
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        if (!response.ok) throw new Error("Failed request");
+        const payload = await response.json();
+        const students = payload.results || [];
+        if (!students.length) {
+          searchResults.innerHTML = '<div class="list-group-item text-muted">No students with an open invoice found.</div>';
+          return;
+        }
+        searchResults.innerHTML = "";
+        students.forEach((student) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "list-group-item list-group-item-action";
+          button.textContent = `${student.label}${student.context ? ` | ${student.context}` : ""}`;
+          button.addEventListener("click", function () {
+            studentSelect.value = String(student.id);
+            searchInput.value = student.label;
+            selectedStudent.textContent = `${student.label}${student.context ? ` | ${student.context}` : ""}`;
+            selectedStudent.classList.remove("d-none");
+            searchResults.innerHTML = "";
+            refreshInvoices(student.id);
+          });
+          searchResults.appendChild(button);
+        });
+      } catch (err) {
+        searchResults.innerHTML = '<div class="list-group-item text-muted">Unable to search students.</div>';
+      }
+    }
+
     studentSelect.addEventListener("change", function () {
       invoiceSelect.value = "";
       refreshInvoices(this.value);
+    });
+
+    searchInput.addEventListener("input", function () {
+      studentSelect.value = "";
+      selectedStudent.classList.add("d-none");
+      refreshInvoices("");
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(searchStudents, 250);
     });
 
     if (!studentSelect.value) {
