@@ -911,6 +911,7 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
             "delivery_mode__icontains",
         ],
         Inquiry: [
+            "inquiry_number__icontains",
             "subject__icontains",
             "message__icontains",
             "status__icontains",

@@ -987,6 +987,11 @@ class Inquiry(TimeStampedModel):
         unique=True,
         editable=False,
     )
+    inquiry_number = models.CharField(
+        max_length=30,
+        unique=True,
+        editable=False,
+    )
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1049,7 +1054,7 @@ class Inquiry(TimeStampedModel):
 
     @property
     def public_id(self) -> str:
-        return f"INQ-{str(self.uuid).split('-')[0].upper()}"
+        return self.inquiry_number
 
     def clean(self) -> None:
         lifecycle_contact = None
@@ -1079,8 +1084,34 @@ class Inquiry(TimeStampedModel):
                 self.contact = self.student.contact
             elif self.prospect_id:
                 self.contact = self.prospect.contact
-        self.full_clean()
+        is_unnumbered_new_inquiry = self._state.adding and not self.inquiry_number
+        self.full_clean(exclude={"inquiry_number"} if is_unnumbered_new_inquiry else None)
+        if is_unnumbered_new_inquiry:
+            from .services.inquiry_numbering import generate_inquiry_number
+
+            self.inquiry_number = generate_inquiry_number(self.inquiry_date)
+        elif not self._state.adding:
+            original_number = (
+                type(self).objects.filter(pk=self.pk)
+                .values_list("inquiry_number", flat=True)
+                .first()
+            )
+            if original_number and self.inquiry_number != original_number:
+                raise ValidationError(
+                    {"inquiry_number": "Inquiry number cannot be changed after creation."}
+                )
         super().save(*args, **kwargs)
+
+
+class InquiryNumberSequence(models.Model):
+    """Transactionally allocates staff-facing Inquiry numbers per calendar year."""
+
+    year = models.PositiveSmallIntegerField(primary_key=True)
+    last_number = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Inquiry number sequence"
+        verbose_name_plural = "Inquiry number sequences"
 
 
 class Enrollment(TimeStampedModel):

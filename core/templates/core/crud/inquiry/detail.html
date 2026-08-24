@@ -32,8 +32,7 @@
     <section class="card shadow-sm h-100"><div class="card-body">
       <h2 class="h5">Inquiry Event</h2>
       <dl class="row">
-        <dt class="col-sm-4">UUID</dt><dd class="col-sm-8 text-break">{{ object.uuid }}</dd>
-        {% if object.legacy_int_id %}<dt class="col-sm-4">Legacy ID</dt><dd class="col-sm-8">{{ object.legacy_int_id }}</dd>{% endif %}
+        <dt class="col-sm-4">Inquiry number</dt><dd class="col-sm-8">{{ object.inquiry_number }}</dd>
         <dt class="col-sm-4">Channel</dt><dd class="col-sm-8">{{ object.get_channel_display }}</dd>
         <dt class="col-sm-4">Status</dt><dd class="col-sm-8">{{ object.get_status_display }}</dd>
         <dt class="col-sm-4">Assigned to</dt><dd class="col-sm-8">{{ object.assigned_to|default:"-" }}</dd>

@@ -732,8 +732,9 @@ class CourseSessionAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
 
 @admin.register(Inquiry)
 class InquiryAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
-    list_display = ("public_id", "contact", "prospect", "student", "channel", "status", "inquiry_date", "assigned_to")
+    list_display = ("inquiry_number", "contact", "prospect", "student", "channel", "status", "inquiry_date", "assigned_to")
     search_fields = (
+        "inquiry_number",
         "=uuid",
         "=legacy_int_id",
         "subject",
@@ -752,7 +753,7 @@ class InquiryAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     list_filter = ("channel", "status", "inquiry_date", "student", "prospect")
     ordering = ("-inquiry_date",)
     list_select_related = ("contact", "prospect", "student", "assigned_to")
-    readonly_fields = ("uuid", "legacy_int_id", "created_at", "updated_at")
+    readonly_fields = ("inquiry_number", "uuid", "legacy_int_id", "created_at", "updated_at")
     date_hierarchy = "inquiry_date"
     autocomplete_fields = ("contact", "prospect", "student", "assigned_to")
 

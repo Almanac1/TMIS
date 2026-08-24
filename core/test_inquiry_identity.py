@@ -1,6 +1,7 @@
 import uuid
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import connection
 from django.db.models.deletion import ProtectedError
 from django.test import TestCase
@@ -49,6 +50,43 @@ class InquiryIdentityWorkflowTests(TestCase):
         self.assertEqual(second.contact, self.contact)
         self.assertEqual(self.contact.inquiries.count(), 2)
         self.assertIs(Inquiry._meta.pk, Inquiry._meta.get_field("uuid"))
+
+    def test_inquiry_numbers_are_unique_sequential_and_separate_from_uuid(self):
+        first = self._create_inquiry("Numbered first")
+        second = self._create_inquiry("Numbered second")
+        year = timezone.localdate().year
+
+        self.assertRegex(first.inquiry_number, rf"^INQ-{year}-\d{{4,}}$")
+        self.assertRegex(second.inquiry_number, rf"^INQ-{year}-\d{{4,}}$")
+        self.assertNotEqual(first.inquiry_number, second.inquiry_number)
+        self.assertEqual(
+            int(second.inquiry_number.rsplit("-", 1)[1]),
+            int(first.inquiry_number.rsplit("-", 1)[1]) + 1,
+        )
+        self.assertNotEqual(first.inquiry_number, str(first.pk))
+
+    def test_inquiry_number_is_immutable(self):
+        inquiry = self._create_inquiry("Immutable number")
+        original_number = inquiry.inquiry_number
+        inquiry.inquiry_number = "INQ-1900-9999"
+
+        with self.assertRaises(ValidationError):
+            inquiry.save()
+
+        inquiry.refresh_from_db()
+        self.assertEqual(inquiry.inquiry_number, original_number)
+
+    def test_inquiry_list_displays_and_searches_human_reference(self):
+        inquiry = self._create_inquiry("Reference search")
+
+        response = self.client.get(
+            reverse("core:inquiry-list"),
+            {"q": inquiry.inquiry_number},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, inquiry.inquiry_number)
+        self.assertContains(response, inquiry.subject)
 
     def test_explicit_uuid_is_stable_and_is_database_primary_key(self):
         stable_uuid = uuid.uuid4()
