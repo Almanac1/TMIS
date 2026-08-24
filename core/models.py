@@ -486,7 +486,11 @@ class Contact(TimeStampedModel):
         ]
 
     def __str__(self) -> str:
-        return f"{self.first_name} {self.last_name}".strip() or f"Contact #{self.pk}"
+        return self.full_name or f"Contact #{self.pk}"
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}".strip()
 
     @property
     def has_converted_prospect(self) -> bool:
@@ -971,23 +975,40 @@ class CourseSession(TimeStampedModel):
 
 
 class Inquiry(TimeStampedModel):
+    uuid = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+        db_column="uuid",
+    )
+    legacy_int_id = models.PositiveBigIntegerField(
+        null=True,
+        blank=True,
+        unique=True,
+        editable=False,
+    )
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="owned_inquiries",
         null=True,
         blank=True,
     )
+    contact = models.ForeignKey(
+        Contact,
+        on_delete=models.PROTECT,
+        related_name="inquiries",
+    )
     prospect = models.ForeignKey(
         Prospect,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="inquiries",
     )
     student = models.ForeignKey(
         Student,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="inquiries",
@@ -1016,39 +1037,50 @@ class Inquiry(TimeStampedModel):
     class Meta:
         ordering = ["-inquiry_date"]
         indexes = [
+            models.Index(fields=["contact", "inquiry_date"]),
             models.Index(fields=["prospect", "inquiry_date"]),
             models.Index(fields=["student", "inquiry_date"]),
             models.Index(fields=["status"]),
             models.Index(fields=["channel"]),
         ]
-        constraints = [
-            models.CheckConstraint(
-                check=Q(prospect__isnull=False) | Q(student__isnull=False),
-                name="inquiry_requires_prospect_or_student",
-            )
-        ]
 
     def __str__(self) -> str:
-        if self.student_id:
-            owner = f"Student: {self.student}"
-        elif self.prospect_id:
-            owner = f"Prospect: {self.prospect}"
-        else:
-            owner = "Unassigned"
-        return self.subject or f"Inquiry #{self.pk} ({owner})"
+        return self.subject or f"{self.public_id} · {self.contact}"
+
+    @property
+    def public_id(self) -> str:
+        return f"INQ-{str(self.uuid).split('-')[0].upper()}"
 
     def clean(self) -> None:
+        lifecycle_contact = None
         if self.student_id and not self.owner_id:
             self.owner = self.student.owner
         elif self.prospect_id and not self.owner_id:
             self.owner = self.prospect.owner
-        if not self.prospect_id and not self.student_id:
-            raise ValidationError("Set at least one of prospect or student for an inquiry.")
+        if self.student_id:
+            lifecycle_contact = self.student.contact
+        elif self.prospect_id:
+            lifecycle_contact = self.prospect.contact
         if self.student_id and self.prospect_id:
             if self.student.prospect_id != self.prospect_id:
                 raise ValidationError(
                     "When both student and prospect are set, they must refer to the same person."
                 )
+        if lifecycle_contact and not self.contact_id:
+            self.contact = lifecycle_contact
+        if lifecycle_contact and self.contact_id != lifecycle_contact.pk:
+            raise ValidationError(
+                {"contact": "Contact must match the selected Prospect or Student."}
+            )
+
+    def save(self, *args, **kwargs):
+        if not self.contact_id:
+            if self.student_id:
+                self.contact = self.student.contact
+            elif self.prospect_id:
+                self.contact = self.prospect.contact
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class Enrollment(TimeStampedModel):

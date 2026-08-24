@@ -5,7 +5,6 @@ from django import forms
 from django.contrib.auth import get_user_model
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Div, Field, Fieldset, HTML, Layout, Row, Submit
-from django.db import transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -21,6 +20,7 @@ from .models import (
     Course,
     CourseSession,
     Invoice,
+    Inquiry,
     Payment,
     PaymentConfirmationStatus,
     Prospect,
@@ -29,6 +29,52 @@ from .models import (
     Student,
     Teacher,
 )
+
+
+class InquiryForm(forms.ModelForm):
+    """Edit the Inquiry event while Contact remains canonical identity."""
+
+    class Meta:
+        model = Inquiry
+        fields = (
+            "contact",
+            "prospect",
+            "student",
+            "inquiry_date",
+            "channel",
+            "subject",
+            "message",
+            "status",
+            "assigned_to",
+            "owner",
+        )
+        widgets = {"inquiry_date": forms.DateTimeInput(attrs={"type": "datetime-local"})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["contact"].queryset = Contact.objects.order_by("first_name", "last_name")
+        self.fields["prospect"].queryset = Prospect.objects.select_related("contact").order_by(
+            "contact__first_name", "contact__last_name"
+        )
+        self.fields["student"].queryset = Student.objects.select_related(
+            "prospect__contact"
+        ).order_by("prospect__contact__first_name", "prospect__contact__last_name")
+        self.fields["contact"].help_text = "Canonical person identity for this Inquiry."
+        self.fields["prospect"].help_text = "Optional lifecycle context; must belong to this Contact."
+        self.fields["student"].help_text = "Optional lifecycle context; must belong to this Contact."
+
+    def clean(self):
+        cleaned = super().clean()
+        contact = cleaned.get("contact")
+        prospect = cleaned.get("prospect")
+        student = cleaned.get("student")
+        if prospect and contact and prospect.contact_id != contact.pk:
+            self.add_error("prospect", "Selected Prospect belongs to a different Contact.")
+        if student and contact and student.contact.pk != contact.pk:
+            self.add_error("student", "Selected Student belongs to a different Contact.")
+        if student and prospect and student.prospect_id != prospect.pk:
+            self.add_error("student", "Selected Student does not belong to the selected Prospect.")
+        return cleaned
 
 
 class DisbursementDateRangeReportForm(forms.Form):
@@ -888,6 +934,7 @@ class ProspectForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.identity_locked = bool(self.instance and self.instance.contact_id)
         self.fields["selected_contact"].queryset = Contact.objects.order_by("first_name", "last_name")
         self.fields["governor_assigned"].queryset = get_user_model().objects.order_by("username")
         self.fields["course_interest"].queryset = Course.objects.filter(status="active").order_by("name")
@@ -974,11 +1021,30 @@ class ProspectForm(forms.ModelForm):
             self.initial["last_name"] = self.instance.contact.last_name
             self.initial["email"] = self.instance.contact.email
             self.initial["phone_number"] = self.instance.contact.phone_number
+            for field_name in (
+                "prospect_is_existing_contact",
+                "selected_contact",
+                "first_name",
+                "last_name",
+                "email",
+                "phone_number",
+            ):
+                self.fields[field_name].disabled = True
+            identity_help = "Canonical identity is edited from the linked Contact record."
+            for field_name in ("first_name", "last_name", "email", "phone_number"):
+                self.fields[field_name].help_text = identity_help
         if self.instance and self.instance.owner_id:
             self.initial["governor_assigned"] = self.instance.owner_id
 
     def clean(self):
         cleaned = super().clean()
+        if self.identity_locked:
+            contact = self.instance.contact
+            self.instance.contact = contact
+            self.instance.owner = cleaned.get("governor_assigned") or self.instance.owner
+            cleaned["contact"] = contact
+            cleaned["selected_contact"] = contact
+            return cleaned
         use_existing_contact = bool(cleaned.get("prospect_is_existing_contact"))
         # A hidden contact selection can remain in the submitted form after the
         # user switches back to new-contact mode. Only honor that field when
@@ -1049,7 +1115,7 @@ class ProspectForm(forms.ModelForm):
         contact = self.cleaned_data.get("contact")
         use_existing_contact = bool(self.cleaned_data.get("prospect_is_existing_contact"))
 
-        if contact:
+        if contact and not self.identity_locked:
             first_name = (self.cleaned_data.get("first_name") or "").strip()
             last_name = (self.cleaned_data.get("last_name") or "").strip()
             email = (self.cleaned_data.get("email") or "").strip()
@@ -1077,12 +1143,6 @@ class ProspectForm(forms.ModelForm):
 
 
 class StudentForm(forms.ModelForm):
-    date_of_birth = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
-    address = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
-    city = forms.CharField(required=False, max_length=100)
-    province_state = forms.CharField(required=False, max_length=100)
-    country = forms.CharField(required=False, max_length=100)
-
     class Meta:
         model = Student
         fields = (
@@ -1095,10 +1155,6 @@ class StudentForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        contact = self.instance.contact if self.instance and self.instance.pk else None
-        if contact:
-            for field in ("date_of_birth", "address", "city", "province_state", "country"):
-                self.fields[field].initial = getattr(contact, field)
         if self.instance and self.instance.pk:
             self.fields["prospect"].disabled = True
             self.fields["prospect"].help_text = "Identity is managed through the linked Contact and cannot be reassigned."
@@ -1119,28 +1175,6 @@ class StudentForm(forms.ModelForm):
         if prospect and not prospect.contact_id:
             self.add_error("prospect", "Selected prospect must have a linked contact.")
         return cleaned
-
-    def save(self, commit=True):
-        with transaction.atomic():
-            student = super().save(commit=commit)
-            contact = student.contact
-            if contact:
-                for field in ("date_of_birth", "address", "city", "province_state", "country"):
-                    value = self.cleaned_data.get(field)
-                    setattr(contact, field, (value or None) if field == "date_of_birth" else (value or ""))
-                contact.full_clean()
-                if commit:
-                    contact.save(
-                        update_fields=[
-                            "date_of_birth",
-                            "address",
-                            "city",
-                            "province_state",
-                            "country",
-                            "updated_at",
-                        ]
-                    )
-            return student
 
 
 class StudentCreateForm(forms.ModelForm):
@@ -1215,6 +1249,11 @@ class StudentCreateForm(forms.ModelForm):
                         Column("new_last_name", css_class="col-12 col-lg-6"),
                         Column("new_email", css_class="col-12 col-lg-6"),
                         Column("new_phone_number", css_class="col-12 col-lg-6"),
+                        Column("date_of_birth", css_class="col-12 col-lg-6"),
+                        Column("city", css_class="col-12 col-lg-6"),
+                        Column("province_state", css_class="col-12 col-lg-6"),
+                        Column("country", css_class="col-12 col-lg-6"),
+                        Column("address", css_class="col-12"),
                         Column("new_source", css_class="col-12"),
                         Column("new_notes", css_class="col-12"),
                     ),
@@ -1231,11 +1270,6 @@ class StudentCreateForm(forms.ModelForm):
                 Row(
                     Column("teacher", css_class="col-12 col-lg-6"),
                     Column("enrollment_status", css_class="col-12 col-lg-6"),
-                    Column("date_of_birth", css_class="col-12 col-lg-6"),
-                    Column("city", css_class="col-12 col-lg-6"),
-                    Column("province_state", css_class="col-12 col-lg-6"),
-                    Column("country", css_class="col-12 col-lg-6"),
-                    Column("address", css_class="col-12"),
                     Column("notes", css_class="col-12"),
                 ),
                 css_class="card shadow-sm rounded-4 border-0 p-4 mb-4 enroll-step-card",
@@ -1275,6 +1309,7 @@ class StudentCreateForm(forms.ModelForm):
 
     def save(self, commit=True):
         person_type = self.cleaned_data.get("person_type")
+        contact_created = False
 
         if person_type == "prospect":
             prospect = self.cleaned_data.get("prospect")
@@ -1288,7 +1323,7 @@ class StudentCreateForm(forms.ModelForm):
             )
             student, _ = prospect.convert_to_student()
         elif person_type == "new_prospect":
-            contact, _ = Contact.get_or_create_from_identity(
+            contact, contact_created = Contact.get_or_create_from_identity(
                 first_name=(self.cleaned_data.get("new_first_name") or "").strip(),
                 last_name=(self.cleaned_data.get("new_last_name") or "").strip(),
                 email=(self.cleaned_data.get("new_email") or "").strip(),
@@ -1311,19 +1346,12 @@ class StudentCreateForm(forms.ModelForm):
 
         if commit:
             student.save()
-            contact = student.contact
-            for field in ("date_of_birth", "address", "city", "province_state", "country"):
-                value = self.cleaned_data.get(field)
-                setattr(contact, field, (value or None) if field == "date_of_birth" else (value or ""))
-            contact.full_clean()
-            contact.save(
-                update_fields=[
-                    "date_of_birth",
-                    "address",
-                    "city",
-                    "province_state",
-                    "country",
-                    "updated_at",
-                ]
-            )
+            if person_type == "new_prospect" and contact_created:
+                contact = student.contact
+                for field in ("date_of_birth", "address", "city", "province_state", "country"):
+                    value = self.cleaned_data.get(field)
+                    if value not in (None, ""):
+                        setattr(contact, field, value)
+                contact.full_clean()
+                contact.save()
         return student

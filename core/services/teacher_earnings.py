@@ -41,7 +41,7 @@ def get_teacher_earnings_dashboard_data():
     students_by_teacher = {
         row["session__teacher_id"]: row["student_count"]
         for row in Enrollment.objects.values("session__teacher_id").annotate(
-            student_count=Count("student", distinct=True)
+            student_count=Count("student__prospect__contact", distinct=True)
         )
     }
 
@@ -56,7 +56,10 @@ def get_teacher_earnings_dashboard_data():
         )
         .annotate(
             total_earnings=Sum("teacher_amount"),
-            students_taught=Count("enrollment__student", distinct=True),
+            students_taught=Count(
+                "enrollment__student__prospect__contact",
+                distinct=True,
+            ),
         )
         .order_by(
             "teacher_id",

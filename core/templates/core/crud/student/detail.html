@@ -66,11 +66,16 @@
             <span class="sp-contact-label">Enrollment Date</span>
             <span class="sp-contact-value">{{ student.created_at|date:"M d, Y" }}</span>
           </li>
+          <li>
+            <span class="sp-contact-label">Contact</span>
+            <span class="sp-contact-value"><a href="{% url 'core:contact-detail' student.contact.pk %}">{{ student.contact.public_id }}</a></span>
+          </li>
         </ul>
       </div>
     </div>
 
     <div class="sp-actions" aria-label="Quick actions">
+      <a class="btn btn-outline-primary" href="{% url 'core:contact-update' student.contact.pk %}">Edit Contact Identity</a>
       <a class="btn btn-primary" href="{% url update_url_name student.pk %}">Edit Student</a>
       <a class="btn btn-outline-primary" href="{% url 'core:payment-create' %}?student={{ student.pk }}">Add Payment</a>
       <a class="btn btn-outline-primary" href="{% url update_url_name student.pk %}">Assign Governor</a>

@@ -26,6 +26,7 @@
         <a class="btn contact-btn contact-btn-primary" href="{% url 'core:contact-convert-to-prospect' object.pk %}">Convert to Prospect</a>
       {% endif %}
       <a class="btn contact-btn contact-btn-secondary" href="{% url update_url_name object.pk %}">Edit</a>
+      <a class="btn contact-btn contact-btn-secondary" href="{% url 'core:inquiry-create' %}?contact={{ object.pk }}">New Inquiry</a>
       <a class="btn contact-btn contact-btn-neutral" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
       {% if can_delete %}
         <a class="btn contact-btn contact-btn-danger" href="{% url delete_url_name object.pk %}">Delete</a>
@@ -74,6 +75,20 @@
           <div><dt>Province / State</dt><dd>{{ object.province_state|default:"-" }}</dd></div>
           <div><dt>Country</dt><dd>{{ object.country|default:"-" }}</dd></div>
         </dl>
+      </section>
+
+      <section class="contact-card">
+        <h2 class="contact-card-title">Inquiry History</h2>
+        <div class="d-grid gap-2">
+          {% for inquiry in object.inquiries.all %}
+            <a class="text-decoration-none border rounded-3 p-2" href="{% url 'core:inquiry-detail' inquiry.pk %}">
+              <span class="fw-semibold">{{ inquiry.subject|default:inquiry.public_id }}</span>
+              <span class="small text-muted d-block">{{ inquiry.inquiry_date|date:"M d, Y H:i" }} · {{ inquiry.get_status_display }}</span>
+            </a>
+          {% empty %}
+            <p class="text-muted mb-0">No inquiries recorded for this Contact.</p>
+          {% endfor %}
+        </div>
       </section>
     </main>
 

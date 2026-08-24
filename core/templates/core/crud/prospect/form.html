@@ -21,6 +21,15 @@
 
 <div class="card shadow-sm">
   <div class="card-body">
+    {% if object and object.contact %}
+      <div class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-2" role="status">
+        <div>
+          <strong>Canonical identity:</strong> {{ object.contact.full_name }} · {{ object.contact.email|default:"No email" }} · {{ object.contact.phone_number|default:"No phone" }}
+          <div class="small text-muted">Name and contact details are managed on the Contact record.</div>
+        </div>
+        <a class="btn btn-outline-primary btn-sm" href="{% url 'core:contact-update' object.contact.pk %}">Edit Contact Identity</a>
+      </div>
+    {% endif %}
     {% crispy form %}
   </div>
 </div>

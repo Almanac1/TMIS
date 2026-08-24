@@ -36,7 +36,8 @@
           <button type="button" class="btn prospect-btn prospect-btn-neutral" disabled aria-disabled="true">Invoice/payment required</button>
         </span>
       {% endif %}
-      <a class="btn prospect-btn prospect-btn-secondary" href="{% url update_url_name object.pk %}">Edit</a>
+      <a class="btn prospect-btn prospect-btn-secondary" href="{% url 'core:contact-update' object.contact.pk %}">Edit Contact Identity</a>
+      <a class="btn prospect-btn prospect-btn-secondary" href="{% url update_url_name object.pk %}">Edit Prospect</a>
       <a class="btn prospect-btn prospect-btn-neutral" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
       {% if can_delete %}
         <a class="btn prospect-btn prospect-btn-danger" href="{% url delete_url_name object.pk %}">Delete</a>
@@ -79,6 +80,7 @@
       <section class="prospect-card">
         <h2 class="prospect-card-title">Contact Information</h2>
         <dl class="prospect-kv-list">
+          <div><dt>Canonical Contact</dt><dd><a href="{% url 'core:contact-detail' object.contact.pk %}">{{ object.contact.full_name }}</a></dd></div>
           <div><dt>Email</dt><dd>{{ object.email|default:"-" }}</dd></div>
           <div><dt>Phone Number</dt><dd>{{ object.phone|default:"-" }}</dd></div>
           <div><dt>Preferred Contact Method</dt><dd>{{ object.get_preferred_contact_method_display|default:"-" }}</dd></div>

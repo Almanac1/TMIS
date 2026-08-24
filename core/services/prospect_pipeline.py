@@ -12,6 +12,7 @@ from core.models import (
     RecipientType,
 )
 from core.services.prospect_conversion import get_prospect_conversion_eligibility
+from core.services.reporting_counts import count_unique_people
 
 
 def get_user_scoped_prospect_queryset(user, *, include_archived: bool = False):
@@ -75,23 +76,39 @@ def get_prospect_pipeline_queryset(
 
 def get_prospect_dashboard_metrics(*, user):
     """Top-level summary metrics for prospect dashboard."""
-    prospects = get_user_scoped_prospect_queryset(user)
+    active_prospects = get_user_scoped_prospect_queryset(user)
+    all_prospects = get_user_scoped_prospect_queryset(user, include_archived=True)
+    converted_filter = (
+        Q(status=ProspectStatus.CONVERTED)
+        | Q(converted_to_student=True)
+        | Q(converted_student__isnull=False)
+        | Q(student_record__isnull=False)
+    )
     return {
-        "total_prospects": prospects.count(),
-        "new_prospects": prospects.filter(status=ProspectStatus.NEW).count(),
-        "qualified_prospects": prospects.filter(status=ProspectStatus.QUALIFIED).count(),
-        "converted_prospects": prospects.filter(student_record__isnull=False).count(),
+        "total_prospects": count_unique_people(all_prospects, contact_field="contact_id"),
+        "new_prospects": count_unique_people(
+            active_prospects.filter(status=ProspectStatus.NEW),
+            contact_field="contact_id",
+        ),
+        "qualified_prospects": count_unique_people(
+            active_prospects.filter(status=ProspectStatus.QUALIFIED),
+            contact_field="contact_id",
+        ),
+        "converted_prospects": count_unique_people(
+            all_prospects.filter(converted_filter),
+            contact_field="contact_id",
+        ),
         "open_inquiries": Inquiry.objects.filter(
-            prospect__in=prospects,
+            prospect__in=all_prospects,
             status__in=[InquiryStatus.OPEN, InquiryStatus.IN_PROGRESS],
-        ).count(),
+        ).values("pk").distinct().count(),
     }
 
 
 def get_pipeline_status_breakdown(*, user):
     """Breakdown of prospect counts by status."""
     rows = (
-        get_user_scoped_prospect_queryset(user)
+        get_user_scoped_prospect_queryset(user, include_archived=True)
         .values("status")
         .annotate(total=Count("pk"))
         .order_by("status")

@@ -111,8 +111,8 @@
           {% for meditator in meditators %}
           <tr>
             <td class="text-center"><input type="checkbox" class="form-check-input" data-bulk-row-select value="{{ meditator.pk }}" aria-label="Select meditator {{ meditator.student.prospect }}"></td>
-            <td class="text-nowrap">{{ meditator.public_id }}</td>
-            <td>{{ meditator.student.prospect }}</td>
+            <td class="text-nowrap"><a href="{% url 'core:meditator-detail' meditator.pk %}">{{ meditator.public_id }}</a></td>
+            <td><a href="{% url 'core:meditator-detail' meditator.pk %}">{{ meditator.student.prospect }}</a></td>
             <td>{{ meditator.student.get_enrollment_status_display|default:"-" }}</td>
             <td>{{ meditator.intro_completed_on|date:"M d, Y"|default:"-" }}</td>
             <td>{{ meditator.day20_completed_on|date:"M d, Y"|default:"-" }}</td>

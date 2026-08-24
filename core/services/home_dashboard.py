@@ -25,6 +25,8 @@ from core.models import (
 )
 from core.services.prospect_pipeline import get_user_scoped_prospect_queryset
 from core.services.governor_compensation import get_governor_compensation_data
+from core.services.ownership import scope_queryset_for_user
+from core.services.reporting_counts import count_unique_people
 
 
 CHECK_IN_DAY_OFFSETS = (3, 10, 20)
@@ -217,8 +219,11 @@ def get_home_dashboard_data(*, user):
         | Q(converted_to_student=True)
         | Q(converted_student__isnull=False)
     )
-    prospect_total = all_prospects.count()
-    converted_total = all_prospects.filter(converted_filter).distinct().count()
+    prospect_total = count_unique_people(all_prospects, contact_field="contact_id")
+    converted_total = count_unique_people(
+        all_prospects.filter(converted_filter),
+        contact_field="contact_id",
+    )
     conversion_percent = round((converted_total / prospect_total) * 100, 1) if prospect_total else 0
 
     enrollment_course_rows = list(
@@ -228,7 +233,11 @@ def get_home_dashboard_data(*, user):
     )
 
     # Open operational inquiries
-    inquiry_scope = Inquiry.objects.filter(prospect__in=prospects)
+    inquiry_scope = scope_queryset_for_user(
+        queryset=Inquiry.objects.all(),
+        model=Inquiry,
+        user=user,
+    )
     open_inquiries = inquiry_scope.filter(status=InquiryStatus.OPEN).count()
     in_progress_inquiries = inquiry_scope.filter(status=InquiryStatus.IN_PROGRESS).count()
 
@@ -329,9 +338,12 @@ def get_home_dashboard_data(*, user):
             "total_prospects": prospect_total,
             "converted_students": converted_total,
             "conversion_percent": conversion_percent,
-            "active_students": Student.objects.filter(
-                enrollments__in=enrollment_scope
-            ).exclude(enrollment_status="inactive").distinct().count(),
+            "active_students": count_unique_people(
+                Student.objects.filter(enrollments__in=enrollment_scope).exclude(
+                    enrollment_status=EnrollmentStatus.INACTIVE
+                ),
+                contact_field="prospect__contact_id",
+            ),
             "open_inquiries": open_inquiries + in_progress_inquiries,
             "outstanding_amount": _to_float(outstanding_total),
             "invoiced_total": _to_float(invoiced_total),

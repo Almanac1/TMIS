@@ -1,0 +1,53 @@
+{% extends "core/crud/base.html" %}
+
+{% block title %}Meditator · {{ meditator.contact.full_name }}{% endblock %}
+{% block breadcrumb_current %}
+  <li class="breadcrumb-item active" aria-current="page">Meditator {{ meditator.public_id }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div>
+    <p class="text-uppercase small fw-semibold text-muted mb-1">Meditator</p>
+    <h1 class="h3 mb-1">{{ meditator.contact.full_name }}</h1>
+    <p class="text-muted mb-0">Identity comes from Contact; meditation progression remains on this lifecycle record.</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-primary" href="{% url 'core:contact-update' meditator.contact.pk %}">Edit Contact Identity</a>
+    <a class="btn btn-outline-secondary" href="{% url 'core:meditator-list' %}">Back to Meditators</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <section class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h5">Canonical Contact</h2>
+        <dl class="row mb-0">
+          <dt class="col-sm-4">Contact</dt><dd class="col-sm-8"><a href="{% url 'core:contact-detail' meditator.contact.pk %}">{{ meditator.contact.public_id }}</a></dd>
+          <dt class="col-sm-4">Name</dt><dd class="col-sm-8">{{ meditator.contact.full_name }}</dd>
+          <dt class="col-sm-4">Email</dt><dd class="col-sm-8">{{ meditator.contact.email|default:"-" }}</dd>
+          <dt class="col-sm-4">Phone</dt><dd class="col-sm-8">{{ meditator.contact.phone_number|default:"-" }}</dd>
+          <dt class="col-sm-4">Address</dt><dd class="col-sm-8">{{ meditator.contact.address|default:"-" }}</dd>
+        </dl>
+      </div>
+    </section>
+  </div>
+  <div class="col-lg-6">
+    <section class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h5">Meditator Lifecycle</h2>
+        <dl class="row mb-0">
+          <dt class="col-sm-4">Meditator ID</dt><dd class="col-sm-8">{{ meditator.public_id }}</dd>
+          <dt class="col-sm-4">Student</dt><dd class="col-sm-8"><a href="{% url 'core:student-detail' meditator.student.pk %}">{{ meditator.student.public_id }}</a></dd>
+          <dt class="col-sm-4">Prospect</dt><dd class="col-sm-8"><a href="{% url 'core:prospect-detail' meditator.student.prospect.pk %}">{{ meditator.student.prospect.public_id }}</a></dd>
+          <dt class="col-sm-4">Intro completed</dt><dd class="col-sm-8">{{ meditator.intro_completed_on|date:"M d, Y"|default:"-" }}</dd>
+          <dt class="col-sm-4">Day 20 completed</dt><dd class="col-sm-8">{{ meditator.day20_completed_on|date:"M d, Y"|default:"-" }}</dd>
+          <dt class="col-sm-4">Transitioned</dt><dd class="col-sm-8">{{ meditator.transitioned_at|date:"M d, Y H:i" }}</dd>
+          <dt class="col-sm-4">Active</dt><dd class="col-sm-8">{% if meditator.is_active %}Yes{% else %}No{% endif %}</dd>
+        </dl>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

@@ -8,6 +8,7 @@ urlpatterns = [
     path("login/", views.EmailLoginView.as_view(), name="login"),
     path("", views.HomeView.as_view(), name="home"),
     path("meditators/", views.MeditatorListView.as_view(), name="meditator-list"),
+    path("meditators/<str:pk>/", views.MeditatorDetailView.as_view(), name="meditator-detail"),
     path(
         "pipeline/prospects/dashboard/",
         views.ProspectDashboardView.as_view(),

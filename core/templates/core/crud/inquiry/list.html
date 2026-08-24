@@ -85,6 +85,7 @@
                 <option value="">All</option>
                 <option value="student"{% if inquiry_filter_values.recipient_scope == "student" %} selected{% endif %}>Student</option>
                 <option value="prospect"{% if inquiry_filter_values.recipient_scope == "prospect" %} selected{% endif %}>Prospect</option>
+                <option value="contact"{% if inquiry_filter_values.recipient_scope == "contact" %} selected{% endif %}>Contact only</option>
               </select>
             </div>
             <div class="col-md-6 col-lg-4">
@@ -112,8 +113,8 @@
           {% for obj in object_list %}
           <tr>
             <td class="text-center"><input type="checkbox" class="form-check-input" data-bulk-row-select value="{{ obj.pk }}" aria-label="Select inquiry {{ obj.pk }}"></td>
-            <td class="text-nowrap">{{ obj.public_id }}</td>
-            <td>{% if obj.student %}<a href="{% url 'core:student-detail' obj.student.pk %}" class="link-primary">{{ obj.student.prospect|default:obj.student }}</a>{% elif obj.prospect %}<a href="{% url 'core:prospect-detail' obj.prospect.pk %}" class="link-primary">{{ obj.prospect }}</a>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+            <td class="text-nowrap"><a href="{% url detail_url_name obj.pk %}">{{ obj.public_id }}</a></td>
+            <td><a href="{% url 'core:contact-detail' obj.contact.pk %}" class="link-primary">{{ obj.contact }}</a>{% if obj.student %}<div class="small text-muted">Student: {{ obj.student.public_id }}</div>{% elif obj.prospect %}<div class="small text-muted">Prospect: {{ obj.prospect.public_id }}</div>{% endif %}</td>
             <td>{{ obj }}</td>
             <td><div class="actions" role="group"><a class="btn btn-outline-primary" href="{% url detail_url_name obj.pk %}">View</a><a class="btn btn-outline-secondary" href="{% url update_url_name obj.pk %}">Edit</a>{% if can_delete %}<a class="btn btn-outline-danger" href="{% url delete_url_name obj.pk %}">Delete</a>{% endif %}</div></td>
           </tr>

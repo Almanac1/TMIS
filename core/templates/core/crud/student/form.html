@@ -10,13 +10,22 @@
 <div class="d-flex justify-content-between align-items-start mb-4">
   <div>
     <h1 class="h3 mb-1">{% if object %}Edit{% else %}Create{% endif %} Student</h1>
-    <p class="text-muted mb-0">Create a student from an existing person or a brand-new prospect.</p>
+    <p class="text-muted mb-0">{% if object %}Update Student-specific status and assignment data. Contact identity remains canonical.{% else %}Create a student from an existing person or a brand-new prospect.{% endif %}</p>
   </div>
   <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to Students</a>
 </div>
 
 <div class="card shadow-sm border-0 rounded-4">
   <div class="card-body p-4">
+    {% if object and object.contact %}
+      <div class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-2" role="status">
+        <div>
+          <strong>Canonical identity:</strong> {{ object.contact.full_name }} · {{ object.contact.email|default:"No email" }} · {{ object.contact.phone_number|default:"No phone" }}
+          <div class="small text-muted">This form contains Student-specific fields only.</div>
+        </div>
+        <a class="btn btn-outline-primary btn-sm" href="{% url 'core:contact-update' object.contact.pk %}">Edit Contact Identity</a>
+      </div>
+    {% endif %}
     {% crispy form %}
   </div>
 </div>

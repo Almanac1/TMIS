@@ -2,10 +2,12 @@ from datetime import date
 
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import IntegrityError, transaction
+from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.urls import reverse
 from unittest.mock import patch
 
-from core.forms import StudentForm
+from core.forms import ProspectForm, StudentCreateForm, StudentForm
 from core.models import (
     Communication,
     Disbursement,
@@ -59,7 +61,18 @@ class CanonicalContactIdentityTests(TestCase):
         with self.assertRaises(FieldDoesNotExist):
             Student._meta.get_field("address")
 
-    def test_student_edit_updates_contact_profile_without_reassigning_identity(self):
+    def test_student_edit_exposes_only_student_fields_and_preserves_contact(self):
+        identity_fields = {
+            "first_name",
+            "last_name",
+            "email",
+            "phone_number",
+            "date_of_birth",
+            "address",
+            "city",
+            "province_state",
+            "country",
+        }
         form = StudentForm(
             data={
                 "prospect": self.prospect.pk,
@@ -67,28 +80,100 @@ class CanonicalContactIdentityTests(TestCase):
                 "enrollment_status": "pending",
                 "notes": "Student lifecycle note",
                 "owner": "",
-                "date_of_birth": "1991-06-13",
-                "address": "20 Liberation Road",
-                "city": "Tema",
-                "province_state": "Greater Accra",
-                "country": "Ghana",
             },
             instance=self.student,
         )
 
+        self.assertTrue(identity_fields.isdisjoint(form.fields))
+        contact_uuid = self.contact.uuid
+        student_uuid = self.student.uuid
         self.assertTrue(form.is_valid(), form.errors)
         saved = form.save()
         self.contact.refresh_from_db()
+        saved.refresh_from_db()
         self.assertEqual(saved.prospect_id, self.prospect.pk)
-        self.assertEqual(self.contact.address, "20 Liberation Road")
-        self.assertEqual(self.contact.city, "Tema")
-        self.assertEqual(self.contact.date_of_birth.isoformat(), "1991-06-13")
+        self.assertEqual(saved.uuid, student_uuid)
+        self.assertEqual(self.contact.uuid, contact_uuid)
+        self.assertEqual(self.contact.address, "10 Independence Avenue")
+        self.assertEqual(self.contact.city, "Accra")
+        self.assertEqual(saved.notes, "Student lifecycle note")
+
+    def test_prospect_edit_locks_identity_and_preserves_contact_uuid(self):
+        contact_uuid = self.contact.uuid
+        prospect_uuid = self.prospect.uuid
+        form = ProspectForm(
+            data={
+                "first_name": "Changed",
+                "last_name": "Identity",
+                "email": "changed@example.com",
+                "phone_number": "+233000000000",
+                "preferred_contact_method": "email",
+                "source": "Updated source",
+                "status": ProspectStatus.NEW,
+                "course_interest": "",
+                "interest_level": "",
+                "notes": "Prospect lifecycle note",
+                "governor_assigned": "",
+            },
+            instance=self.prospect,
+        )
+
+        for field_name in (
+            "prospect_is_existing_contact",
+            "selected_contact",
+            "first_name",
+            "last_name",
+            "email",
+            "phone_number",
+        ):
+            self.assertTrue(form.fields[field_name].disabled)
+        self.assertTrue(form.is_valid(), form.errors)
+        form.save()
+        self.contact.refresh_from_db()
+        self.prospect.refresh_from_db()
+        self.assertEqual(self.contact.uuid, contact_uuid)
+        self.assertEqual(self.prospect.uuid, prospect_uuid)
+        self.assertEqual(self.contact.full_name, "Ama Mensah")
+        self.assertEqual(self.contact.email, "ama.identity@example.com")
+        self.assertEqual(self.prospect.source, "Updated source")
+        self.assertEqual(self.prospect.notes, "Prospect lifecycle note")
+
+    @patch("core.models.Prospect.convert_to_student")
+    def test_existing_contact_student_creation_cannot_mutate_contact_profile(self, convert):
+        convert.return_value = (self.student, False)
+        contact_uuid = self.contact.uuid
+        form = StudentCreateForm(
+            data={
+                "person_type": "contact",
+                "student": "",
+                "prospect": "",
+                "contact": self.contact.pk,
+                "teacher": "",
+                "enrollment_status": "pending",
+                "notes": "Student note",
+                "owner": "",
+                "date_of_birth": "1999-01-01",
+                "address": "Attempted replacement address",
+                "city": "Kumasi",
+                "province_state": "Ashanti",
+                "country": "Ghana",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        form.save()
+        self.contact.refresh_from_db()
+        self.assertEqual(self.contact.uuid, contact_uuid)
+        self.assertEqual(self.contact.date_of_birth, date(1990, 5, 12))
+        self.assertEqual(self.contact.address, "10 Independence Avenue")
+        self.assertEqual(self.contact.city, "Accra")
 
     @patch(
         "core.services.prospect_conversion.validate_prospect_conversion_financial_eligibility"
     )
     def test_conversion_reuses_contact_and_is_idempotent(self, validate_financials):
         contact_count = Contact.objects.count()
+        uuid_snapshot = (self.contact.uuid, self.prospect.uuid, self.student.uuid)
 
         first_student, first_created = self.prospect.convert_to_student()
         second_student, second_created = self.prospect.convert_to_student()
@@ -105,6 +190,10 @@ class CanonicalContactIdentityTests(TestCase):
         self.assertTrue(self.prospect.converted_to_student)
         self.assertEqual(self.prospect.converted_student, self.student)
         self.assertIsNotNone(self.prospect.converted_at)
+        self.assertEqual(
+            (self.contact.uuid, self.prospect.uuid, self.student.uuid),
+            uuid_snapshot,
+        )
         validate_financials.assert_called_once_with(self.prospect)
 
     @patch("core.services.meditator_transitions.evaluate_student_meditator_eligibility")
@@ -130,6 +219,9 @@ class CanonicalContactIdentityTests(TestCase):
             missing_reasons=(),
         )
         contact_count = Contact.objects.count()
+        contact_uuid = self.contact.uuid
+        prospect_uuid = self.prospect.uuid
+        student_uuid = self.student.uuid
 
         first = ensure_meditator_transition_for_student(self.student)
         second = ensure_meditator_transition_for_student(self.student)
@@ -139,6 +231,82 @@ class CanonicalContactIdentityTests(TestCase):
         self.assertTrue(Student.objects.filter(pk=self.student.pk).exists())
         self.assertEqual(Meditator.objects.filter(student=self.student).count(), 1)
         self.assertEqual(Contact.objects.count(), contact_count)
+        self.assertEqual(self.contact.uuid, contact_uuid)
+        self.assertEqual(self.prospect.uuid, prospect_uuid)
+        self.assertEqual(self.student.uuid, student_uuid)
+        self.assertEqual(first.uuid, second.uuid)
+
+
+class CanonicalIdentityUITests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser(
+            username="identity_admin",
+            email="identity.admin@example.com",
+            password="safe-password-123",
+        )
+        self.client.force_login(self.user)
+        self.contact = Contact.objects.create(
+            first_name="Esi",
+            last_name="Owusu",
+            email="esi.identity@example.com",
+            phone_number="+233245550909",
+        )
+        self.prospect = Prospect.objects.create(contact=self.contact, owner=self.user)
+        self.student = Student.objects.create(prospect=self.prospect, owner=self.user)
+        self.meditator = Meditator.objects.create(student=self.student)
+
+    def test_lifecycle_details_link_to_canonical_contact_edit_surface(self):
+        contact_edit_url = reverse("core:contact-update", kwargs={"pk": self.contact.pk})
+        urls = (
+            reverse("core:prospect-detail", kwargs={"pk": self.prospect.pk}),
+            reverse("core:student-detail", kwargs={"pk": self.student.pk}),
+            reverse("core:meditator-detail", kwargs={"pk": self.meditator.pk}),
+        )
+
+        for url in urls:
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, contact_edit_url)
+            self.assertContains(response, "Esi Owusu")
+
+    def test_uuid_detail_urls_remain_resolvable(self):
+        targets = (
+            ("core:contact-detail", self.contact),
+            ("core:prospect-detail", self.prospect),
+            ("core:student-detail", self.student),
+            ("core:meditator-detail", self.meditator),
+        )
+
+        for route_name, instance in targets:
+            response = self.client.get(
+                reverse(route_name, kwargs={"pk": str(instance.uuid)})
+            )
+            self.assertEqual(response.status_code, 200)
+
+    def test_contact_is_the_identity_edit_surface_and_keeps_uuid(self):
+        contact_uuid = self.contact.uuid
+        response = self.client.post(
+            reverse("core:contact-update", kwargs={"pk": str(contact_uuid)}),
+            data={
+                "first_name": "Esi",
+                "last_name": "Boateng",
+                "email": "esi.updated@example.com",
+                "phone_number": "+233245550909",
+                "date_of_birth": "",
+                "address": "Canonical address",
+                "city": "Accra",
+                "province_state": "Greater Accra",
+                "country": "Ghana",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.contact.refresh_from_db()
+        self.assertEqual(self.contact.uuid, contact_uuid)
+        self.assertEqual(self.contact.last_name, "Boateng")
+        self.assertEqual(self.contact.email, "esi.updated@example.com")
+        self.assertEqual(self.student.last_name, "Boateng")
+        self.assertEqual(self.meditator.contact.email, "esi.updated@example.com")
 
 
 class DomainRelationshipPlacementTests(TestCase):
@@ -151,8 +319,9 @@ class DomainRelationshipPlacementTests(TestCase):
         self.assertIs(Inquiry._meta.get_field("student").remote_field.model, Student)
         self.assertIs(Communication._meta.get_field("prospect").remote_field.model, Prospect)
         self.assertIs(Communication._meta.get_field("student").remote_field.model, Student)
+        self.assertIs(Inquiry._meta.get_field("contact").remote_field.model, Contact)
 
-        for model in (Enrollment, Invoice, Payment, Disbursement, Inquiry, Communication):
+        for model in (Enrollment, Invoice, Payment, Disbursement, Communication):
             with self.assertRaises(FieldDoesNotExist):
                 model._meta.get_field("contact")
 

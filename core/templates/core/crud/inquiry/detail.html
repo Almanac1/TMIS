@@ -1,1 +1,45 @@
-{% extends "core/crud/model_detail.html" %}
+{% extends "core/crud/base.html" %}
+
+{% block title %}{{ object.public_id }}{% endblock %}
+{% block breadcrumb_current %}<li class="breadcrumb-item active">{{ object.public_id }}</li>{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div>
+    <p class="text-uppercase small fw-semibold text-muted mb-1">Inquiry</p>
+    <h1 class="h3 mb-1">{{ object.subject|default:object.public_id }}</h1>
+    <p class="text-muted mb-0">{{ object.public_id }} · {{ object.inquiry_date|date:"M d, Y H:i" }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-primary" href="{% url 'core:inquiry-update' object.pk %}">Edit Inquiry</a>
+    <a class="btn btn-outline-secondary" href="{% url 'core:inquiry-list' %}">Back to Inquiries</a>
+  </div>
+</div>
+<div class="row g-3">
+  <div class="col-lg-5">
+    <section class="card shadow-sm h-100"><div class="card-body">
+      <h2 class="h5">Canonical Contact</h2>
+      <dl class="row mb-0">
+        <dt class="col-sm-4">Contact</dt><dd class="col-sm-8"><a href="{% url 'core:contact-detail' object.contact.pk %}">{{ object.contact }}</a></dd>
+        <dt class="col-sm-4">Email</dt><dd class="col-sm-8">{{ object.contact.email|default:"-" }}</dd>
+        <dt class="col-sm-4">Phone</dt><dd class="col-sm-8">{{ object.contact.phone_number|default:"-" }}</dd>
+        <dt class="col-sm-4">Prospect</dt><dd class="col-sm-8">{% if object.prospect %}<a href="{% url 'core:prospect-detail' object.prospect.pk %}">{{ object.prospect.public_id }}</a>{% else %}-{% endif %}</dd>
+        <dt class="col-sm-4">Student</dt><dd class="col-sm-8">{% if object.student %}<a href="{% url 'core:student-detail' object.student.pk %}">{{ object.student.public_id }}</a>{% else %}-{% endif %}</dd>
+      </dl>
+    </div></section>
+  </div>
+  <div class="col-lg-7">
+    <section class="card shadow-sm h-100"><div class="card-body">
+      <h2 class="h5">Inquiry Event</h2>
+      <dl class="row">
+        <dt class="col-sm-4">UUID</dt><dd class="col-sm-8 text-break">{{ object.uuid }}</dd>
+        {% if object.legacy_int_id %}<dt class="col-sm-4">Legacy ID</dt><dd class="col-sm-8">{{ object.legacy_int_id }}</dd>{% endif %}
+        <dt class="col-sm-4">Channel</dt><dd class="col-sm-8">{{ object.get_channel_display }}</dd>
+        <dt class="col-sm-4">Status</dt><dd class="col-sm-8">{{ object.get_status_display }}</dd>
+        <dt class="col-sm-4">Assigned to</dt><dd class="col-sm-8">{{ object.assigned_to|default:"-" }}</dd>
+      </dl>
+      <h3 class="h6">Message</h3><p class="mb-0">{{ object.message|linebreaksbr }}</p>
+    </div></section>
+  </div>
+</div>
+{% endblock %}

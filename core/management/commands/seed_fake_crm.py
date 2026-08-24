@@ -275,6 +275,7 @@ class Command(BaseCommand):
                 if rng.random() < 0.72:
                     Inquiry.objects.create(
                         owner=owner,
+                        contact=prospect.contact,
                         prospect=prospect,
                         inquiry_date=timezone.now() - timedelta(days=rng.randint(0, 120)),
                         channel=rng.choice(list(InquiryChannel.values)),

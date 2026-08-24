@@ -1236,7 +1236,7 @@ class ProspectConversionStateVisibilityTests(TestCase):
         self.assertContains(response, "Yaw Boateng")
 
 
-class ProspectEditPersistsContactTests(TestCase):
+class ProspectEditPreservesCanonicalContactTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(
             username="prospect_editor",
@@ -1255,7 +1255,9 @@ class ProspectEditPersistsContactTests(TestCase):
             status=ProspectStatus.NEW,
         )
 
-    def test_prospect_edit_updates_linked_contact_email(self):
+    def test_prospect_edit_cannot_update_linked_contact_email(self):
+        contact_uuid = self.contact.uuid
+        prospect_uuid = self.prospect.uuid
         response = self.client.post(
             reverse("core:prospect-update", kwargs={"pk": self.prospect.pk}),
             data={
@@ -1274,7 +1276,11 @@ class ProspectEditPersistsContactTests(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         self.contact.refresh_from_db()
-        self.assertEqual(self.contact.email, "kofi.new@example.com")
+        self.prospect.refresh_from_db()
+        self.assertEqual(self.contact.email, "kofi.old@example.com")
+        self.assertEqual(self.contact.uuid, contact_uuid)
+        self.assertEqual(self.prospect.uuid, prospect_uuid)
+        self.assertEqual(self.prospect.source, "Referral")
 
 
 class ProspectCreatedAtBehaviorTests(TestCase):

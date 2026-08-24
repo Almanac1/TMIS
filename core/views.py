@@ -16,7 +16,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
 from django.db.models.functions import Coalesce, Concat
-from django.http import HttpResponse, JsonResponse, QueryDict
+from django.http import Http404, HttpResponse, JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -38,6 +38,7 @@ from .forms import (
     DisbursementReportingFilterForm,
     CommunicationForm,
     EnrollmentForm,
+    InquiryForm,
     InvoicePaymentForm,
     PaymentForm,
     ProspectForm,
@@ -137,6 +138,10 @@ def _resolve_object_by_pk_or_uuid(*, queryset, model, identifier):
                 except Exception:
                     # Fall back to pk lookup below.
                     pass
+    if model is Inquiry and str(identifier or "").isdigit():
+        legacy_match = queryset.filter(legacy_int_id=int(identifier)).first()
+        if legacy_match is not None:
+            return legacy_match
     return get_object_or_404(queryset, pk=identifier)
 
 
@@ -165,6 +170,10 @@ def _build_bulk_filtered_queryset(recipient_kind, user, source_query):
         view = MeditatorListView()
         view.request = simple_request
         return view.get_queryset()
+    if recipient_kind == "inquiry":
+        view = InquiryListView()
+        view.request = simple_request
+        return view.get_queryset()
     return None
 
 
@@ -191,6 +200,10 @@ def _collect_bulk_recipient_emails(recipient_kind, queryset):
                 and obj.student.prospect.contact.email
             ):
                 emails.append(obj.student.prospect.contact.email.strip())
+    elif recipient_kind == "inquiry":
+        for obj in queryset.select_related("contact"):
+            if obj.contact_id and obj.contact.email:
+                emails.append(obj.contact.email.strip())
     return sorted({email for email in emails if email})
 
 
@@ -209,7 +222,7 @@ def bulk_message_send_view(request):
     subject = (payload.get("subject") or "").strip()
     body = (payload.get("body") or "").strip()
 
-    if recipient_kind not in {"prospect", "student", "contact", "meditator"}:
+    if recipient_kind not in {"prospect", "student", "contact", "meditator", "inquiry"}:
         return JsonResponse({"ok": False, "error": "Unsupported recipient type."}, status=400)
     if not body:
         return JsonResponse({"ok": False, "error": "Message body is required."}, status=400)
@@ -425,6 +438,30 @@ class MeditatorListView(ProductLoginRequiredMixin, ListView):
             "created_to": (self.request.GET.get("created_to") or "").strip(),
         }
         return context
+
+
+class MeditatorDetailView(ProductLoginRequiredMixin, DetailView):
+    model = Meditator
+    template_name = "core/crud/meditator/detail.html"
+    context_object_name = "meditator"
+
+    def get_queryset(self):
+        return scope_queryset_for_user(
+            queryset=Meditator.objects.select_related(
+                "student__prospect__contact",
+                "student__teacher",
+                "student__owner",
+            ),
+            model=Meditator,
+            user=self.request.user,
+        )
+
+    def get_object(self, queryset=None):
+        return _resolve_object_by_pk_or_uuid(
+            queryset=queryset or self.get_queryset(),
+            model=Meditator,
+            identifier=self.kwargs["pk"],
+        )
 
 
 class EmailLoginView(View):
@@ -775,6 +812,10 @@ class CRUDContextMixin:
                             return by_uuid
                     except Exception:
                         pass
+        if self.model is Inquiry and str(identifier or "").isdigit():
+            legacy_match = queryset.filter(legacy_int_id=int(identifier)).first()
+            if legacy_match is not None:
+                return legacy_match
         return get_object_or_404(queryset, pk=identifier)
 
     def _ui_model_names(self):
@@ -874,6 +915,10 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
             "message__icontains",
             "status__icontains",
             "channel__icontains",
+            "contact__first_name__icontains",
+            "contact__last_name__icontains",
+            "contact__email__icontains",
+            "contact__phone_number__icontains",
             "prospect__contact__first_name__icontains",
             "prospect__contact__last_name__icontains",
             "prospect__contact__email__icontains",
@@ -997,8 +1042,15 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
         filters = Q()
         for lookup in self.SEARCH_CONFIG.get(self.model, []):
             filters |= Q(**{lookup: query})
+        if self.model is Inquiry:
+            normalized = query.replace("-", "").lower()
+            if len(normalized) >= 4 and all(ch in "0123456789abcdef" for ch in normalized):
+                filters |= Q(uuid__startswith=normalized)
         if query.isdigit():
-            filters |= Q(pk=int(query))
+            if self.model is Inquiry:
+                filters |= Q(legacy_int_id=int(query))
+            else:
+                filters |= Q(pk=int(query))
         if filters:
             return queryset.filter(filters)
         return queryset
@@ -1106,6 +1158,8 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
             queryset = queryset.filter(student__isnull=False)
         elif recipient_scope == "prospect":
             queryset = queryset.filter(prospect__isnull=False)
+        elif recipient_scope == "contact":
+            queryset = queryset.filter(prospect__isnull=True, student__isnull=True)
         if created_from:
             queryset = queryset.filter(inquiry_date__date__gte=created_from)
         if created_to:
@@ -1176,7 +1230,12 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
         if self.model is Payment:
             queryset = queryset.select_related("invoice__enrollment__student__prospect")
         if self.model is Inquiry:
-            queryset = queryset.select_related("student__prospect__contact", "prospect__contact", "assigned_to")
+            queryset = queryset.select_related(
+                "contact",
+                "student__prospect__contact",
+                "prospect__contact",
+                "assigned_to",
+            )
             queryset = self._apply_inquiry_filters(queryset)
         if self.model is Communication:
             queryset = queryset.select_related(
@@ -1564,8 +1623,15 @@ class CommunicationCreateView(BaseCreateView):
                 targets.append({"recipient_type": RecipientType.STUDENT, "prospect": None, "student": student, "email": email, "label": str(student.prospect if student and student.prospect_id else student)})
                 continue
             if kind == "inquiry":
-                obj = Inquiry.objects.select_related("student__prospect__contact", "prospect__contact").filter(pk=identifier).first()
-                if not obj:
+                try:
+                    obj = _resolve_object_by_pk_or_uuid(
+                        queryset=Inquiry.objects.select_related(
+                            "contact", "student__prospect__contact", "prospect__contact"
+                        ),
+                        model=Inquiry,
+                        identifier=identifier,
+                    )
+                except Http404:
                     invalid.append(f"{kind}:{identifier}")
                     continue
                 if obj.student_id:
@@ -2348,6 +2414,32 @@ class StudentCreateView(BaseCreateView):
 class StudentUpdateView(BaseUpdateView):
     model = Student
     form_class = StudentForm
+    fields = None
+
+
+class InquiryCreateView(BaseCreateView):
+    model = Inquiry
+    form_class = InquiryForm
+    fields = None
+
+    def get_initial(self):
+        initial = super().get_initial()
+        contact_id = (self.request.GET.get("contact") or "").strip()
+        if contact_id:
+            try:
+                initial["contact"] = _resolve_object_by_pk_or_uuid(
+                    queryset=Contact.objects.all(),
+                    model=Contact,
+                    identifier=contact_id,
+                )
+            except Http404:
+                pass
+        return initial
+
+
+class InquiryUpdateView(BaseUpdateView):
+    model = Inquiry
+    form_class = InquiryForm
     fields = None
 
 

@@ -1,1 +1,21 @@
-{% extends "core/crud/model_form.html" %}
+{% extends "core/crud/base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% if object %}Edit {{ object.public_id }}{% else %}Create Inquiry{% endif %}{% endblock %}
+{% block breadcrumb_current %}<li class="breadcrumb-item active">{% if object %}Edit Inquiry{% else %}Create Inquiry{% endif %}</li>{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h1 class="h3 mb-1">{% if object %}Edit {{ object.public_id }}{% else %}Create Inquiry{% endif %}</h1>
+    <p class="text-muted mb-0">An Inquiry is an independent interaction linked to one canonical Contact.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{% url 'core:inquiry-list' %}">Back to Inquiries</a>
+</div>
+<div class="card shadow-sm">
+  <div class="card-body p-4">
+    {% if object %}<div class="alert alert-light border"><strong>Inquiry UUID:</strong> {{ object.uuid }}</div>{% endif %}
+    {% crispy form %}
+  </div>
+</div>
+{% endblock %}
