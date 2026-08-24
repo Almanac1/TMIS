@@ -244,6 +244,7 @@ class ProspectConvertedFilter(admin.SimpleListFilter):
 class ProspectAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     form = ProspectForm
     list_display = (
+        "crm_reference",
         "first_name",
         "last_name",
         "phone",
@@ -264,6 +265,8 @@ class ProspectAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "created_at",
     )
     search_fields = (
+        "crm_reference",
+        "contact__crm_reference",
         "contact__first_name",
         "contact__last_name",
         "contact__email",
@@ -271,8 +274,14 @@ class ProspectAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     )
     autocomplete_fields = ("contact", "teacher")
     ordering = ("-created_at",)
-    readonly_fields = ("convert_to_student_button", "created_at", "updated_at")
+    readonly_fields = (
+        "crm_reference",
+        "convert_to_student_button",
+        "created_at",
+        "updated_at",
+    )
     fields = (
+        "crm_reference",
         "contact_first_name",
         "contact_last_name",
         "contact_email",
@@ -658,6 +667,7 @@ class TeacherAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
 class StudentAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     form = StudentForm
     list_display = (
+        "crm_reference",
         "prospect",
         "teacher",
         "enrollment_status",
@@ -667,6 +677,9 @@ class StudentAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "created_at",
     )
     search_fields = (
+        "crm_reference",
+        "prospect__crm_reference",
+        "prospect__contact__crm_reference",
         "prospect__contact__first_name",
         "prospect__contact__last_name",
         "prospect__contact__email",
@@ -681,7 +694,7 @@ class StudentAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     )
     ordering = ("prospect__contact__first_name", "prospect__contact__last_name")
     list_select_related = ("prospect", "teacher")
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("crm_reference", "created_at", "updated_at")
     date_hierarchy = "created_at"
     autocomplete_fields = ("prospect", "teacher")
     inlines = (StudentEnrollmentInline,)
@@ -1285,6 +1298,7 @@ class CommunicationAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
 @admin.register(Contact)
 class ContactAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     list_display = (
+        "crm_reference",
         "first_name",
         "last_name",
         "email",
@@ -1295,6 +1309,7 @@ class ContactAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     )
     list_filter = ("created_at",)
     search_fields = (
+        "crm_reference",
         "first_name",
         "last_name",
         "email",
@@ -1303,13 +1318,14 @@ class ContactAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "province_state",
         "country",
     )
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("crm_reference", "created_at", "updated_at")
     date_hierarchy = "created_at"
 
 
 @admin.register(Meditator)
 class MeditatorAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     list_display = (
+        "crm_reference",
         "student",
         "is_active",
         "invalidated_at",
@@ -1319,6 +1335,10 @@ class MeditatorAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "day20_completed_on",
     )
     search_fields = (
+        "crm_reference",
+        "student__crm_reference",
+        "student__prospect__crm_reference",
+        "student__prospect__contact__crm_reference",
         "student__prospect__contact__first_name",
         "student__prospect__contact__last_name",
         "student__prospect__contact__email",
@@ -1327,6 +1347,7 @@ class MeditatorAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     ordering = ("-transitioned_at", "-created_at")
     list_select_related = ("student", "student__prospect", "student__prospect__contact")
     readonly_fields = (
+        "crm_reference",
         "student",
         "transitioned_at",
         "transition_trigger",

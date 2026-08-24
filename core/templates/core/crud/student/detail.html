@@ -40,7 +40,7 @@
         <p class="sp-kicker">Student Profile</p>
         <h1 class="sp-name">{{ student.prospect }}</h1>
         <div class="sp-meta-row">
-          <span class="sp-id">ID #{{ student.pk }}</span>
+          <span class="sp-id">{{ student.public_id }}</span>
           {% with status=student.enrollment_status|lower %}
             {% if status == "active" or status == "enrolled" %}
               <span class="sp-status-badge is-active">Active</span>

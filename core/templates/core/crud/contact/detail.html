@@ -1,8 +1,8 @@
 {% extends "core/crud/base.html" %}
 
-{% block title %}Contact #{{ object.pk }}{% endblock %}
+{% block title %}Contact {{ object.public_id }}{% endblock %}
 {% block breadcrumb_current %}
-  <li class="breadcrumb-item active" aria-current="page">Detail #{{ object.pk }}</li>
+  <li class="breadcrumb-item active" aria-current="page">{{ object.public_id }}</li>
 {% endblock %}
 
 {% block content %}
@@ -16,7 +16,7 @@
         {% else %}
           <span class="contact-chip contact-chip-neutral">Not Converted</span>
         {% endif %}
-        <span class="contact-chip contact-chip-neutral">Contact ID: {{ object.pk }}</span>
+        <span class="contact-chip contact-chip-neutral">Contact ID: {{ object.public_id }}</span>
       </div>
     </div>
     <div class="contact-action-group" aria-label="Contact actions">

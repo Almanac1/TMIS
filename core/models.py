@@ -178,6 +178,7 @@ class MeditatorTransitionEventType(models.TextChoices):
 class Prospect(TimeStampedModel):
     BAD_LEAD_ATTEMPT_THRESHOLD = 4
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    crm_reference = models.CharField(max_length=30, unique=True, editable=False)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -244,6 +245,10 @@ class Prospect(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.first_name} {self.last_name}".strip() or f"Prospect #{self.pk}"
+
+    @property
+    def public_id(self) -> str:
+        return self.crm_reference
 
     @property
     def first_name(self) -> str:
@@ -454,6 +459,9 @@ class Prospect(TimeStampedModel):
             raise ValidationError("A prospect must be linked to a contact.")
 
     def save(self, *args, **kwargs):
+        from core.services.crm_references import prepare_crm_reference
+
+        prepare_crm_reference(self, prefix="PRO")
         if not self.contact_id:
             raise ValidationError("A prospect must be linked to a contact.")
         super().save(*args, **kwargs)
@@ -461,6 +469,7 @@ class Prospect(TimeStampedModel):
 
 class Contact(TimeStampedModel):
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    crm_reference = models.CharField(max_length=30, unique=True, editable=False)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     email = models.EmailField(blank=True, null=True)
@@ -487,6 +496,10 @@ class Contact(TimeStampedModel):
 
     def __str__(self) -> str:
         return self.full_name or f"Contact #{self.pk}"
+
+    @property
+    def public_id(self) -> str:
+        return self.crm_reference
 
     @property
     def full_name(self) -> str:
@@ -657,6 +670,9 @@ class Contact(TimeStampedModel):
                     )
 
     def save(self, *args, **kwargs):
+        from core.services.crm_references import prepare_crm_reference
+
+        prepare_crm_reference(self, prefix="CNT")
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -753,6 +769,7 @@ class Location(TimeStampedModel):
 
 class Student(TimeStampedModel):
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    crm_reference = models.CharField(max_length=30, unique=True, editable=False)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -835,6 +852,10 @@ class Student(TimeStampedModel):
         teacher_name = self.teacher if self.teacher_id else "Unassigned"
         return f"{self.prospect} ({teacher_name})"
 
+    @property
+    def public_id(self) -> str:
+        return self.crm_reference
+
     def has_intro_enrollment(self) -> bool:
         if not self.pk:
             return False
@@ -861,6 +882,9 @@ class Student(TimeStampedModel):
             validate_student_completion_financials(self)
 
     def save(self, *args, **kwargs):
+        from core.services.crm_references import prepare_crm_reference
+
+        prepare_crm_reference(self, prefix="STU")
         if self.prospect_id and not self.owner_id:
             self.owner = self.prospect.owner
         if (
@@ -1114,6 +1138,27 @@ class InquiryNumberSequence(models.Model):
     class Meta:
         verbose_name = "Inquiry number sequence"
         verbose_name_plural = "Inquiry number sequences"
+
+
+class CRMReferenceSequence(models.Model):
+    """Transactionally allocates staff-facing lifecycle references by year."""
+
+    prefix = models.CharField(max_length=10)
+    year = models.PositiveSmallIntegerField()
+    last_number = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["prefix", "year"],
+                name="unique_crm_reference_sequence_prefix_year",
+            )
+        ]
+        verbose_name = "CRM reference sequence"
+        verbose_name_plural = "CRM reference sequences"
+
+    def __str__(self) -> str:
+        return f"{self.prefix}-{self.year}: {self.last_number}"
 
 
 class Enrollment(TimeStampedModel):
@@ -1524,6 +1569,7 @@ class Payment(TimeStampedModel):
 
 class Meditator(TimeStampedModel):
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    crm_reference = models.CharField(max_length=30, unique=True, editable=False)
     student = models.OneToOneField(
         Student,
         on_delete=models.CASCADE,
@@ -1555,12 +1601,17 @@ class Meditator(TimeStampedModel):
 
     @property
     def public_id(self) -> str:
-        # Stable short display ID for list views in schemas that still use integer PKs.
-        return f"MED-{self.pk}"
+        return self.crm_reference
 
     @property
     def contact(self):
         return self.student.contact if self.student_id else None
+
+    def save(self, *args, **kwargs):
+        from core.services.crm_references import prepare_crm_reference
+
+        prepare_crm_reference(self, prefix="MED")
+        super().save(*args, **kwargs)
 
 
 class MeditatorTransitionEvent(TimeStampedModel):

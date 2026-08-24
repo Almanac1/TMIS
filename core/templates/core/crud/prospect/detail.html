@@ -1,8 +1,8 @@
 {% extends "core/crud/base.html" %}
 
-{% block title %}Prospect #{{ object.pk }}{% endblock %}
+{% block title %}Prospect {{ object.public_id }}{% endblock %}
 {% block breadcrumb_current %}
-  <li class="breadcrumb-item active" aria-current="page">Detail #{{ object.pk }}</li>
+  <li class="breadcrumb-item active" aria-current="page">{{ object.public_id }}</li>
 {% endblock %}
 
 {% block content %}
@@ -11,6 +11,7 @@
     <div>
       <h1 class="prospect-title">{{ object }}</h1>
       <div class="prospect-status-row" aria-label="Prospect statuses">
+        <span class="prospect-chip prospect-chip-neutral">Prospect ID: {{ object.public_id }}</span>
         {% if object.status == "bad_lead" %}
           <span class="prospect-chip prospect-chip-danger">Bad Lead</span>
         {% else %}

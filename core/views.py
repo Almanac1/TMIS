@@ -119,8 +119,12 @@ def _supports_uuid_lookup(model):
 
 
 def _resolve_object_by_pk_or_uuid(*, queryset, model, identifier):
+    candidate = str(identifier or "").strip()
+    if candidate and any(field.name == "crm_reference" for field in model._meta.fields):
+        by_crm_reference = queryset.filter(crm_reference__iexact=candidate).first()
+        if by_crm_reference is not None:
+            return by_crm_reference
     if _supports_uuid_lookup(model):
-        candidate = str(identifier or "").strip()
         if candidate:
             normalized = candidate.replace("-", "").lower()
             # Only attempt UUID lookups for UUID-like tokens to avoid
@@ -377,6 +381,10 @@ class MeditatorListView(ProductLoginRequiredMixin, ListView):
                     )
                 )
                 token_lookups = [
+                    "crm_reference__icontains",
+                    "student__crm_reference__icontains",
+                    "student__prospect__crm_reference__icontains",
+                    "student__prospect__contact__crm_reference__icontains",
                     "search_full_name__icontains",
                     "student__prospect__contact__first_name__icontains",
                     "student__prospect__contact__last_name__icontains",
@@ -800,8 +808,14 @@ class CRUDContextMixin:
         return any(field.name == "uuid" for field in model._meta.fields)
 
     def _resolve_scoped_object(self, queryset, identifier):
+        candidate = str(identifier or "").strip()
+        if candidate and any(
+            field.name == "crm_reference" for field in self.model._meta.fields
+        ):
+            by_crm_reference = queryset.filter(crm_reference__iexact=candidate).first()
+            if by_crm_reference is not None:
+                return by_crm_reference
         if self._supports_uuid_lookup(self.model):
-            candidate = str(identifier or "").strip()
             if candidate:
                 normalized = candidate.replace("-", "").lower()
                 uuid_like = len(normalized) >= 8 and all(ch in "0123456789abcdef" for ch in normalized)
@@ -859,6 +873,7 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
 
     SEARCH_CONFIG = {
         Prospect: [
+            "crm_reference__icontains",
             "contact__first_name__icontains",
             "contact__last_name__icontains",
             "contact__email__icontains",
@@ -867,6 +882,7 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
             "source__icontains",
         ],
         Contact: [
+            "crm_reference__icontains",
             "first_name__icontains",
             "last_name__icontains",
             "email__icontains",
@@ -877,6 +893,7 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
             "country__icontains",
         ],
         Student: [
+            "crm_reference__icontains",
             "prospect__contact__first_name__icontains",
             "prospect__contact__last_name__icontains",
             "prospect__contact__email__icontains",
@@ -1049,6 +1066,7 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
                 )
             )
             token_lookups = [
+                "crm_reference__icontains",
                 "search_full_name__icontains",
                 "prospect__contact__first_name__icontains",
                 "prospect__contact__last_name__icontains",
@@ -2186,7 +2204,10 @@ class PaymentStudentSearchView(ProductLoginRequiredMixin, View):
                 )
             )
             .filter(
-                Q(search_full_name__icontains=query)
+                Q(crm_reference__icontains=query)
+                | Q(prospect__crm_reference__icontains=query)
+                | Q(prospect__contact__crm_reference__icontains=query)
+                | Q(search_full_name__icontains=query)
                 | Q(prospect__contact__first_name__icontains=query)
                 | Q(prospect__contact__last_name__icontains=query)
                 | Q(prospect__contact__email__icontains=query)
@@ -2208,7 +2229,8 @@ class PaymentStudentSearchView(ProductLoginRequiredMixin, View):
                         "context": " | ".join(
                             value
                             for value in (
-                                f"Prospect #{student.prospect_id}",
+                                student.public_id,
+                                student.prospect.public_id,
                                 student.email,
                                 student.phone,
                             )
@@ -2283,7 +2305,10 @@ class EnrollmentPersonSearchView(ProductLoginRequiredMixin, View):
                     "prospect__contact__last_name",
                 )
             ).filter(
-                Q(search_full_name__icontains=query)
+                Q(crm_reference__icontains=query)
+                | Q(prospect__crm_reference__icontains=query)
+                | Q(prospect__contact__crm_reference__icontains=query)
+                | Q(search_full_name__icontains=query)
                 | Q(prospect__contact__first_name__icontains=query)
                 | Q(prospect__contact__last_name__icontains=query)
                 | Q(prospect__contact__email__icontains=query)
@@ -2311,7 +2336,7 @@ class EnrollmentPersonSearchView(ProductLoginRequiredMixin, View):
                         for value in (obj.prospect.contact.email, obj.prospect.contact.phone_number)
                         if value
                     ),
-                    "badge": f"Student | Prospect #{obj.prospect_id}",
+                    "badge": f"{obj.public_id} | {obj.prospect.public_id}",
                 }
                 for obj in eligible_students
             ]
@@ -2323,7 +2348,9 @@ class EnrollmentPersonSearchView(ProductLoginRequiredMixin, View):
                 model=Prospect,
                 user=request.user,
             ).filter(is_archived=False).filter(
-                Q(contact__first_name__icontains=query)
+                Q(crm_reference__icontains=query)
+                | Q(contact__crm_reference__icontains=query)
+                | Q(contact__first_name__icontains=query)
                 | Q(contact__last_name__icontains=query)
                 | Q(contact__email__icontains=query)
                 | Q(contact__phone_number__icontains=query)
@@ -2333,7 +2360,7 @@ class EnrollmentPersonSearchView(ProductLoginRequiredMixin, View):
                     "id": obj.pk,
                     "label": f"{obj.contact.first_name} {obj.contact.last_name}".strip(),
                     "meta": obj.contact.email or obj.contact.phone_number or "",
-                    "badge": "Prospect",
+                    "badge": obj.public_id,
                 }
                 for obj in queryset
             ]
@@ -2345,7 +2372,8 @@ class EnrollmentPersonSearchView(ProductLoginRequiredMixin, View):
                 model=Contact,
                 user=request.user,
             ).filter(
-                Q(first_name__icontains=query)
+                Q(crm_reference__icontains=query)
+                | Q(first_name__icontains=query)
                 | Q(last_name__icontains=query)
                 | Q(email__icontains=query)
                 | Q(phone_number__icontains=query)
@@ -2355,7 +2383,7 @@ class EnrollmentPersonSearchView(ProductLoginRequiredMixin, View):
                     "id": obj.pk,
                     "label": f"{obj.first_name} {obj.last_name}".strip(),
                     "meta": obj.email or obj.phone_number or "",
-                    "badge": "Contact",
+                    "badge": obj.public_id,
                 }
                 for obj in queryset
             ]
@@ -2377,7 +2405,8 @@ class ContactAutocompleteView(ProductLoginRequiredMixin, View):
             model=Contact,
             user=request.user,
         ).filter(
-            Q(first_name__icontains=query)
+            Q(crm_reference__icontains=query)
+            | Q(first_name__icontains=query)
             | Q(last_name__icontains=query)
             | Q(email__icontains=query)
             | Q(phone_number__icontains=query)
@@ -2388,6 +2417,7 @@ class ContactAutocompleteView(ProductLoginRequiredMixin, View):
                 "results": [
                     {
                         "id": contact.pk,
+                        "reference": contact.public_id,
                         "name": f"{contact.first_name} {contact.last_name}".strip(),
                         "email": contact.email or "",
                         "phone": contact.phone_number or "",

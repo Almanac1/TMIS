@@ -1,60 +1,243 @@
 {% extends "core/crud/base.html" %}
 
 {% block title %}{{ object.public_id }}{% endblock %}
-{% block breadcrumb_current %}<li class="breadcrumb-item active">{{ object.public_id }}</li>{% endblock %}
+{% block breadcrumb_current %}<li class="breadcrumb-item active" aria-current="page">{{ object.public_id }}</li>{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
-  <div>
-    <p class="text-uppercase small fw-semibold text-muted mb-1">Inquiry</p>
-    <h1 class="h3 mb-1">{{ object.subject|default:object.public_id }}</h1>
-    <p class="text-muted mb-0">{{ object.public_id }} · {{ object.inquiry_date|date:"M d, Y H:i" }}</p>
-    {% if object.is_archived %}<span class="badge text-bg-secondary mt-2">Archived</span>{% endif %}
+<article class="inquiry-detail-shell">
+  <header class="inquiry-record-header">
+    <div class="header-primary-row">
+      <div class="inquiry-record-heading">
+        <div class="record-kicker">Inquiry</div>
+        <h1 class="record-title">{{ object.subject|default:object.public_id }}</h1>
+      </div>
+
+      <div class="primary-actions" aria-label="Primary inquiry actions">
+        <a class="btn btn-primary" href="{% url 'core:inquiry-update' object.pk %}"><i class="bi bi-pencil-square" aria-hidden="true"></i>Edit Inquiry</a>
+        {% if object.student or object.prospect %}<a class="btn btn-outline-primary" href="{% url 'core:communication-create' %}?inquiry={{ object.pk }}"><i class="bi bi-send" aria-hidden="true"></i>Send Communication</a>{% endif %}
+      </div>
+    </div>
+
+    <div class="header-secondary-row">
+      <div class="record-meta" aria-label="Inquiry metadata">
+        <span class="record-reference"><i class="bi bi-file-text" aria-hidden="true"></i>{{ object.inquiry_number }}</span>
+        <span class="meta-separator" aria-hidden="true"></span>
+        <span class="record-date"><i class="bi bi-calendar3" aria-hidden="true"></i>{{ object.inquiry_date|date:"M d, Y H:i" }}</span>
+        <span class="meta-separator" aria-hidden="true"></span>
+        {% if object.is_archived %}<span class="inquiry-status status-archived">Archived</span>{% elif object.status == "open" %}<span class="inquiry-status status-open">Open</span>{% elif object.status == "in_progress" %}<span class="inquiry-status status-progress">In progress</span>{% elif object.status == "closed" %}<span class="inquiry-status status-closed">Closed</span>{% else %}<span class="inquiry-status status-neutral">{{ object.get_status_display }}</span>{% endif %}
+      </div>
+
+      <div class="secondary-actions" aria-label="Secondary inquiry actions">
+        <a class="back-link" href="{% url 'core:inquiry-list' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i>Back to Inquiries</a>
+        <span class="action-divider" aria-hidden="true"></span>
+        {% if object.is_archived %}
+          <form method="post" action="{% url 'core:inquiry-restore' object.pk %}">{% csrf_token %}<button class="btn btn-outline-success" type="submit"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>Restore</button></form>
+        {% else %}
+          <form method="post" action="{% url 'core:inquiry-archive' object.pk %}">{% csrf_token %}<button class="btn inquiry-archive-btn" type="submit"><i class="bi bi-archive" aria-hidden="true"></i>Archive</button></form>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+
+  <div class="row g-4 inquiry-record-grid">
+    <div class="col-12 col-xl-4">
+      <section class="inquiry-detail-card contact-card h-100" aria-labelledby="contact-card-title">
+        <div class="detail-card-header">
+          <span class="detail-card-icon"><i class="bi bi-person" aria-hidden="true"></i></span>
+          <div><h2 id="contact-card-title">Contact</h2><p>Person identity</p></div>
+        </div>
+
+        <div class="contact-profile">
+          <span class="contact-avatar" aria-hidden="true">{{ object.contact.first_name|first }}{{ object.contact.last_name|first }}</span>
+          <a href="{% url 'core:contact-detail' object.contact.pk %}" class="contact-name">{{ object.contact.full_name }}<i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+        </div>
+
+        <div class="contact-methods">
+          <div class="contact-method">
+            <i class="bi bi-envelope" aria-hidden="true"></i>
+            {% if object.contact.email %}<a class="contact-value" href="mailto:{{ object.contact.email }}">{{ object.contact.email }}</a>{% else %}<span class="empty-value">No email address</span>{% endif %}
+          </div>
+          <div class="contact-method">
+            <i class="bi bi-telephone" aria-hidden="true"></i>
+            {% if object.contact.phone_number %}<a class="contact-value" href="tel:{{ object.contact.phone_number }}">{{ object.contact.phone_number }}</a>{% else %}<span class="empty-value">No phone number</span>{% endif %}
+          </div>
+        </div>
+
+        <div class="lifecycle-section">
+          <h3>CRM Lifecycle</h3>
+          <dl class="lifecycle-list">
+            <div class="lifecycle-row">
+              <dt>Prospect</dt>
+              <dd>{% if object.prospect %}<a class="lifecycle-badge lifecycle-active" href="{% url 'core:prospect-detail' object.prospect.pk %}"><i class="bi bi-check-circle" aria-hidden="true"></i>Prospect</a>{% else %}<span class="lifecycle-badge lifecycle-inactive">Not a prospect</span>{% endif %}</dd>
+            </div>
+            <div class="lifecycle-row">
+              <dt>Student</dt>
+              <dd>{% if object.student %}<a class="lifecycle-badge lifecycle-active" href="{% url 'core:student-detail' object.student.pk %}"><i class="bi bi-check-circle" aria-hidden="true"></i>Student</a>{% else %}<span class="lifecycle-badge lifecycle-inactive">Not a student</span>{% endif %}</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+    </div>
+
+    <div class="col-12 col-xl-8">
+      <section class="inquiry-detail-card inquiry-card h-100" aria-labelledby="inquiry-card-title">
+        <div class="detail-card-header">
+          <span class="detail-card-icon"><i class="bi bi-chat-left-text" aria-hidden="true"></i></span>
+          <div><h2 id="inquiry-card-title">Inquiry Details</h2><p>Request information</p></div>
+        </div>
+
+        <dl class="inquiry-field-grid">
+          <div class="inquiry-field">
+            <dt>Inquiry number</dt>
+            <dd class="field-emphasis">{{ object.inquiry_number }}</dd>
+          </div>
+          <div class="inquiry-field">
+            <dt>Channel</dt>
+            <dd><span class="channel-value"><span class="field-icon">{% if object.channel == "phone" %}<i class="bi bi-telephone" aria-hidden="true"></i>{% elif object.channel == "email" %}<i class="bi bi-envelope" aria-hidden="true"></i>{% elif object.channel == "website" %}<i class="bi bi-globe" aria-hidden="true"></i>{% elif object.channel == "walk_in" %}<i class="bi bi-person-walking" aria-hidden="true"></i>{% else %}<i class="bi bi-people" aria-hidden="true"></i>{% endif %}</span>{{ object.get_channel_display }}</span></dd>
+          </div>
+          <div class="inquiry-field">
+            <dt>Status</dt>
+            <dd>{% if object.is_archived %}<span class="inquiry-status status-archived">Archived</span>{% elif object.status == "open" %}<span class="inquiry-status status-open">Open</span>{% elif object.status == "in_progress" %}<span class="inquiry-status status-progress">In progress</span>{% elif object.status == "closed" %}<span class="inquiry-status status-closed">Closed</span>{% else %}<span class="inquiry-status status-neutral">{{ object.get_status_display }}</span>{% endif %}</dd>
+          </div>
+          <div class="inquiry-field">
+            <dt>Assigned to</dt>
+            <dd>{% if object.assigned_to %}<span class="assignee-value"><i class="bi bi-person-check" aria-hidden="true"></i>{{ object.assigned_to.get_full_name|default:object.assigned_to.username }}</span>{% else %}<span class="empty-value">Unassigned</span>{% endif %}</dd>
+          </div>
+        </dl>
+
+        <div class="message-section">
+          <div class="message-heading">Message</div>
+          <div class="message-content">{{ object.message|linebreaksbr }}</div>
+        </div>
+      </section>
+    </div>
   </div>
-  <div class="d-flex gap-2">
-    {% if object.is_archived %}<form method="post" action="{% url 'core:inquiry-restore' object.pk %}">{% csrf_token %}<button class="btn btn-outline-success" type="submit">Restore</button></form>{% else %}<form method="post" action="{% url 'core:inquiry-archive' object.pk %}">{% csrf_token %}<button class="btn btn-outline-warning" type="submit">Archive</button></form>{% endif %}
-    {% if object.student or object.prospect %}<a class="btn btn-outline-primary" href="{% url 'core:communication-create' %}?inquiry={{ object.pk }}">Send Communication</a>{% endif %}
-    <a class="btn btn-primary" href="{% url 'core:inquiry-update' object.pk %}">Edit Inquiry</a>
-    <a class="btn btn-outline-secondary" href="{% url 'core:inquiry-list' %}">Back to Inquiries</a>
-  </div>
-</div>
-<div class="row g-3">
-  <div class="col-lg-5">
-    <section class="card shadow-sm h-100"><div class="card-body">
-      <h2 class="h5">Canonical Contact</h2>
-      <dl class="row mb-0">
-        <dt class="col-sm-4">Contact</dt><dd class="col-sm-8"><a href="{% url 'core:contact-detail' object.contact.pk %}">{{ object.contact }}</a></dd>
-        <dt class="col-sm-4">Email</dt><dd class="col-sm-8">{{ object.contact.email|default:"-" }}</dd>
-        <dt class="col-sm-4">Phone</dt><dd class="col-sm-8">{{ object.contact.phone_number|default:"-" }}</dd>
-        <dt class="col-sm-4">Prospect</dt><dd class="col-sm-8">{% if object.prospect %}<a href="{% url 'core:prospect-detail' object.prospect.pk %}">{{ object.prospect.public_id }}</a>{% else %}-{% endif %}</dd>
-        <dt class="col-sm-4">Student</dt><dd class="col-sm-8">{% if object.student %}<a href="{% url 'core:student-detail' object.student.pk %}">{{ object.student.public_id }}</a>{% else %}-{% endif %}</dd>
-      </dl>
-    </div></section>
-  </div>
-  <div class="col-lg-7">
-    <section class="card shadow-sm h-100"><div class="card-body">
-      <h2 class="h5">Inquiry Event</h2>
-      <dl class="row">
-        <dt class="col-sm-4">Inquiry number</dt><dd class="col-sm-8">{{ object.inquiry_number }}</dd>
-        <dt class="col-sm-4">Channel</dt><dd class="col-sm-8">{{ object.get_channel_display }}</dd>
-        <dt class="col-sm-4">Status</dt><dd class="col-sm-8">{{ object.get_status_display }}</dd>
-        <dt class="col-sm-4">Assigned to</dt><dd class="col-sm-8">{{ object.assigned_to|default:"-" }}</dd>
-      </dl>
-      <h3 class="h6">Message</h3><p class="mb-0">{{ object.message|linebreaksbr }}</p>
-    </div></section>
-  </div>
-</div>
-{% if object.communications.exists %}
-<section class="card shadow-sm mt-3"><div class="card-body">
-  <h2 class="h5">Related Communications</h2>
-  <div class="list-group list-group-flush">
-    {% for communication in object.communications.all|slice:":5" %}
-      <a class="list-group-item list-group-item-action px-0" href="{% url 'core:communication-detail' communication.pk %}">
-        <strong>{{ communication.subject|default:communication.get_communication_type_display }}</strong>
-        <span class="text-muted"> · {{ communication.created_at|date:"M d, Y H:i" }} · {{ communication.get_delivery_status_display }}</span>
-      </a>
-    {% endfor %}
-  </div>
-</div></section>
-{% endif %}
+
+  {% if object.communications.exists %}
+    <section class="inquiry-detail-card communications-card" aria-labelledby="communications-title">
+      <div class="detail-card-header communications-header">
+        <span class="detail-card-icon"><i class="bi bi-envelope" aria-hidden="true"></i></span>
+        <div><h2 id="communications-title">Related Communications</h2><p>Recent activity connected to this inquiry</p></div>
+      </div>
+      <div class="communication-list">
+        {% for communication in object.communications.all|slice:":5" %}
+          <a class="communication-row" href="{% url 'core:communication-detail' communication.pk %}">
+            <span class="communication-copy"><strong>{{ communication.subject|default:communication.get_communication_type_display }}</strong><span>{{ communication.created_at|date:"M d, Y H:i" }}</span></span>
+            <span class="communication-status">{{ communication.get_delivery_status_display }}</span>
+            <i class="bi bi-chevron-right" aria-hidden="true"></i>
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+</article>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .content-card > nav[aria-label="breadcrumb"] { margin-bottom: 1.75rem !important; }
+  .content-card > nav[aria-label="breadcrumb"] .breadcrumb { --bs-breadcrumb-divider-color: #9ca2b0; --bs-breadcrumb-item-padding-x: .65rem; font-size: .9rem; }
+  .content-card > nav[aria-label="breadcrumb"] a { color: var(--crm-primary); text-decoration: underline; text-underline-offset: 3px; }
+  .content-card > nav[aria-label="breadcrumb"] a:hover { color: var(--crm-primary-strong); }
+  .content-card > nav[aria-label="breadcrumb"] .active { color: var(--crm-muted); }
+  .inquiry-detail-shell { max-width: 1440px; margin: 0 auto; }
+  .inquiry-record-header { padding: .15rem .35rem 1.8rem; border-bottom: 1px solid var(--crm-border); }
+  .header-primary-row, .header-secondary-row { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
+  .inquiry-record-heading { min-width: 0; }
+  .record-kicker { margin-bottom: .65rem; color: var(--crm-primary); font-size: .76rem; font-weight: 800; letter-spacing: .115em; text-transform: uppercase; }
+  .record-title { margin: 0; color: var(--crm-text); font-size: clamp(1.35rem, 1.1rem + .9vw, 1.75rem); font-weight: 700; letter-spacing: .01em; line-height: 1.2; overflow-wrap: anywhere; }
+  .header-secondary-row { margin-top: 1.35rem; }
+  .record-meta { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; color: var(--crm-muted); font-size: .92rem; }
+  .record-reference, .record-date { display: inline-flex; align-items: center; gap: .55rem; }
+  .record-reference { color: var(--crm-primary); font-weight: 750; letter-spacing: .01em; }
+  .record-reference i, .record-date i { font-size: 1.05rem; }
+  .record-date i { color: #747b8e; }
+  .meta-separator { width: 4px; height: 4px; border-radius: 50%; background: #7d8494; }
+  .primary-actions, .secondary-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .65rem; }
+  .primary-actions .btn, .secondary-actions .btn { display: inline-flex; align-items: center; justify-content: center; gap: .55rem; min-height: 48px; border-radius: 9px; padding: .68rem 1.05rem; font-size: .9rem; font-weight: 650; white-space: nowrap; }
+  .primary-actions .btn i { font-size: 1.05rem; }
+  .back-link { display: inline-flex; align-items: center; gap: .55rem; min-height: 42px; color: #555d70; font-size: .9rem; font-weight: 650; text-decoration: none; }
+  .back-link:hover { color: var(--crm-primary); }
+  .back-link i { font-size: 1.15rem; }
+  .action-divider { width: 1px; height: 30px; margin: 0 .35rem; background: #dfe2e8; }
+  .secondary-actions form { margin: 0; }
+  .inquiry-archive-btn { color: var(--color-warning); border: 1px solid #e5a248; background: #fff; }
+  .inquiry-archive-btn:hover, .inquiry-archive-btn:focus { color: #8a4c03; border-color: #d58b28; background: var(--color-warning-soft); }
+  .inquiry-record-grid { margin-top: .15rem; padding-top: 1.6rem; }
+  .inquiry-detail-card { overflow: hidden; border: 1px solid #e2e4ea; border-radius: 16px; background: #fff; box-shadow: 0 8px 22px rgba(37, 20, 43, .07); padding: 1.5rem; }
+  .detail-card-header { display: flex; align-items: center; gap: .9rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--crm-border); }
+  .detail-card-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 48px; width: 48px; height: 48px; border: 1px solid var(--brand-primary-border); border-radius: 50%; color: var(--crm-primary); background: var(--brand-primary-soft); font-size: 1.25rem; }
+  .detail-card-header h2 { margin: 0; color: var(--crm-text); font-size: 1.2rem; font-weight: 760; letter-spacing: -.02em; }
+  .detail-card-header p { margin: .15rem 0 0; color: var(--crm-muted); font-size: .86rem; }
+  .contact-profile { display: flex; align-items: center; gap: 1rem; padding: 1.45rem 0 1.15rem; }
+  .contact-avatar { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 54px; width: 54px; height: 54px; border-radius: 50%; color: #fff; background: #8a5a96; font-size: 1rem; font-weight: 700; letter-spacing: .02em; }
+  .contact-name { display: inline-flex; align-items: center; gap: .45rem; min-width: 0; color: var(--crm-primary); font-size: 1rem; font-weight: 750; line-height: 1.35; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  .contact-name i { color: #747b8d; font-size: .82rem; }
+  .contact-name:hover { color: var(--crm-primary-strong); }
+  .contact-methods { display: grid; gap: .85rem; padding-bottom: 1.35rem; }
+  .contact-method { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: .7rem; color: var(--crm-text); }
+  .contact-method > i { color: #687083; font-size: 1.05rem; line-height: 1.45; }
+  .contact-value { color: var(--crm-text); font-size: .9rem; line-height: 1.5; text-decoration: none; overflow-wrap: anywhere; }
+  .contact-value:hover { color: var(--crm-primary); text-decoration: underline; text-underline-offset: 2px; }
+  .lifecycle-section { padding-top: 1.35rem; border-top: 1px solid var(--crm-border); }
+  .lifecycle-section h3 { margin: 0 0 1rem; color: var(--crm-muted); font-size: .7rem; font-weight: 800; letter-spacing: .085em; text-transform: uppercase; }
+  .lifecycle-list { display: grid; gap: .9rem; margin: 0; }
+  .lifecycle-row { display: grid; grid-template-columns: minmax(90px, 38%) minmax(0, 1fr); align-items: center; gap: .75rem; min-height: 34px; }
+  .lifecycle-row dt { color: var(--crm-text); font-size: .9rem; font-weight: 700; }
+  .lifecycle-row dd { margin: 0; }
+  .inquiry-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2rem; margin: 0; padding-top: .85rem; }
+  .inquiry-field { min-height: 100px; padding: 1.05rem 0; border-bottom: 1px solid var(--crm-border); }
+  .inquiry-field dt, .message-heading { margin: 0 0 .65rem; color: var(--crm-muted); font-size: .7rem; font-weight: 800; letter-spacing: .085em; text-transform: uppercase; }
+  .inquiry-field dd { min-width: 0; margin: 0; color: var(--crm-text); font-size: .95rem; font-weight: 550; }
+  .field-emphasis { color: var(--crm-primary) !important; font-size: 1.02rem !important; font-weight: 750 !important; }
+  .channel-value, .assignee-value { display: inline-flex; align-items: center; gap: .65rem; }
+  .field-icon { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border: 1px solid var(--brand-primary-border); border-radius: 50%; color: var(--crm-primary); background: var(--brand-primary-soft); }
+  .empty-value { color: #777e8d; font-weight: 450; font-style: italic; }
+  .lifecycle-badge, .inquiry-status, .communication-status { display: inline-flex; align-items: center; gap: .32rem; width: fit-content; border: 1px solid transparent; border-radius: 999px; padding: .3rem .65rem; font-size: .68rem; font-weight: 800; letter-spacing: .045em; line-height: 1; text-decoration: none; text-transform: uppercase; }
+  .lifecycle-active, .status-open { color: var(--crm-primary); border-color: var(--brand-primary-border); background: var(--brand-primary-soft); }
+  .lifecycle-active:hover { color: var(--crm-primary-strong); border-color: #c7b2ce; background: var(--brand-primary-active); }
+  .lifecycle-inactive, .status-neutral, .status-archived { color: #667085; border-color: #dce1e8; background: #f6f7f9; }
+  .status-progress { color: #52617b; border-color: #ccd4e1; background: #f1f4f8; }
+  .status-closed { color: var(--color-success); border-color: #b9dfc7; background: var(--color-success-soft); }
+  .message-section { padding-top: 1.3rem; }
+  .message-content { min-height: 120px; border: 1px solid #e6deea; border-radius: 13px; padding: 1.1rem; color: #29303d; background: #fcfafc; font-size: .95rem; line-height: 1.65; overflow-wrap: anywhere; }
+  .communications-card { margin-top: 1.5rem; }
+  .communications-header { padding-bottom: 1rem; }
+  .communication-list { margin-bottom: -.5rem; }
+  .communication-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .85rem; padding: .9rem 0; border-bottom: 1px solid #f0f1f5; color: var(--crm-text); text-decoration: none; }
+  .communication-row:last-child { border-bottom: 0; }
+  .communication-row:hover { color: var(--crm-primary); }
+  .communication-copy { display: flex; flex-direction: column; min-width: 0; gap: .18rem; }
+  .communication-copy strong { overflow: hidden; font-size: .9rem; text-overflow: ellipsis; white-space: nowrap; }
+  .communication-copy span { color: var(--crm-muted); font-size: .78rem; }
+  .communication-status { color: #667085; border-color: #dce1e8; background: #f6f7f9; }
+  .communication-row > i { color: #9aa1ae; }
+
+  @media (max-width: 1199.98px) {
+    .header-primary-row, .header-secondary-row { align-items: flex-start; }
+    .header-primary-row { flex-direction: column; }
+    .primary-actions { justify-content: flex-start; }
+  }
+
+  @media (max-width: 767.98px) {
+    .header-secondary-row { flex-direction: column; }
+    .secondary-actions { justify-content: flex-start; }
+  }
+
+  @media (max-width: 575.98px) {
+    .inquiry-record-header { padding-inline: 0; }
+    .primary-actions, .secondary-actions, .primary-actions .btn, .primary-actions a, .secondary-actions form, .secondary-actions .btn { width: 100%; }
+    .secondary-actions { gap: .45rem; }
+    .back-link { width: auto; }
+    .action-divider { display: none; }
+    .record-meta { align-items: flex-start; }
+    .meta-separator { display: none; }
+    .record-date { flex-basis: 100%; }
+    .inquiry-detail-card { padding: 1.1rem; }
+    .inquiry-field-grid { grid-template-columns: 1fr; }
+    .inquiry-field { min-height: auto; }
+    .communication-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .communication-row > i { display: none; }
+  }
+</style>
 {% endblock %}

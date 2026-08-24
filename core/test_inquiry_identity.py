@@ -549,7 +549,8 @@ class InquiryArchivingMigrationTests(TransactionTestCase):
     """Existing Inquiry identity and history survive the additive archive migration."""
 
     migrate_from = [("core", "0043_communication_inquiry_relationship")]
-    migrate_to = [("core", "0044_inquiry_archiving")]
+    # End at the current migration leaf so later tests see the complete schema.
+    migrate_to = [("core", "0047_enforce_lifecycle_crm_references")]
 
     def setUp(self):
         super().setUp()
