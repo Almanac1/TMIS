@@ -121,6 +121,74 @@ class InquiryIdentityWorkflowTests(TestCase):
         self.assertIsNone(inquiry.prospect)
         self.assertIsNone(inquiry.student)
 
+    def test_inquiry_form_creates_one_new_contact_and_links_new_inquiry(self):
+        before_contacts = Contact.objects.count()
+        form = InquiryForm(
+            data={
+                "contact_mode": "new",
+                "contact": "",
+                "new_first_name": "New",
+                "new_last_name": "Caller",
+                "new_email": "new.caller@example.com",
+                "new_phone_number": "+1 416 555 0102",
+                "prospect": "",
+                "student": "",
+                "inquiry_date": timezone.localtime().strftime("%Y-%m-%dT%H:%M"),
+                "channel": "phone",
+                "subject": "First inquiry",
+                "message": "Course dates",
+                "status": InquiryStatus.OPEN,
+                "assigned_to": "",
+                "owner": self.user.pk,
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        inquiry = form.save()
+
+        self.assertEqual(Contact.objects.count(), before_contacts + 1)
+        self.assertEqual(inquiry.contact.email, "new.caller@example.com")
+        self.assertIsNotNone(inquiry.uuid)
+        self.assertRegex(inquiry.inquiry_number, r"^INQ-\d{4}-\d{4,}$")
+
+    def test_inquiry_form_reuses_duplicate_contact_identity(self):
+        before_contacts = Contact.objects.count()
+        form = InquiryForm(
+            data={
+                "contact_mode": "new",
+                "contact": "",
+                "new_first_name": "Akua",
+                "new_last_name": "Inquiry",
+                "new_email": "AKUA.INQUIRY@example.com",
+                "new_phone_number": "",
+                "prospect": "",
+                "student": "",
+                "inquiry_date": timezone.localtime().strftime("%Y-%m-%dT%H:%M"),
+                "channel": "email",
+                "subject": "Another inquiry",
+                "message": "Advanced techniques",
+                "status": InquiryStatus.OPEN,
+                "assigned_to": "",
+                "owner": self.user.pk,
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        inquiry = form.save()
+
+        self.assertEqual(Contact.objects.count(), before_contacts)
+        self.assertEqual(inquiry.contact, self.contact)
+
+    def test_inquiry_create_page_prefills_searchable_existing_contact(self):
+        response = self.client.get(
+            reverse("core:inquiry-create"),
+            {"contact": self.contact.pk},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Search existing Contacts")
+        self.assertContains(response, self.contact.full_name)
+
     def test_lifecycle_contact_mismatch_is_rejected_server_side(self):
         other = Contact.objects.create(
             first_name="Different",

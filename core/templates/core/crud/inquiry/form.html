@@ -15,7 +15,121 @@
 <div class="card shadow-sm">
   <div class="card-body p-4">
     {% if object %}<div class="alert alert-light border"><strong>Inquiry number:</strong> {{ object.inquiry_number }}</div>{% endif %}
-    {% crispy form %}
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      {{ form.contact }}
+      {% if form.contact.errors %}<div class="alert alert-danger py-2">{{ form.contact.errors }}</div>{% endif %}
+
+      <section class="border rounded-3 p-3 mb-4">
+        <h2 class="h5">Canonical Contact</h2>
+        {{ form.contact_mode|as_crispy_field }}
+        <div id="existing-contact-wrap">
+          <label for="inquiry-contact-search" class="form-label">Search existing Contacts</label>
+          <input id="inquiry-contact-search" type="search" class="form-control" autocomplete="off" placeholder="Search by name, email, or phone">
+          <div class="form-text">Enter at least two characters, then select the correct person.</div>
+          <div id="inquiry-contact-results" class="list-group mt-2"></div>
+          {% with selected_contact=form.fields.contact.queryset.first %}
+            <div id="inquiry-contact-selected" class="alert alert-light border mt-2 mb-0{% if not selected_contact %} d-none{% endif %}">
+              {% if selected_contact %}{{ selected_contact.full_name }} · {{ selected_contact.email|default:"No email" }} · {{ selected_contact.phone_number|default:"No phone" }}{% endif %}
+            </div>
+          {% endwith %}
+        </div>
+        <div id="new-contact-wrap" class="row d-none">
+          <div class="col-md-6">{{ form.new_first_name|as_crispy_field }}</div>
+          <div class="col-md-6">{{ form.new_last_name|as_crispy_field }}</div>
+          <div class="col-md-6">{{ form.new_email|as_crispy_field }}</div>
+          <div class="col-md-6">{{ form.new_phone_number|as_crispy_field }}</div>
+          <p class="small text-muted mb-0">TMIS will reuse a matching Contact by email, or by matching name and normalized phone number.</p>
+        </div>
+      </section>
+
+      <section class="border rounded-3 p-3 mb-4">
+        <h2 class="h5">Inquiry details</h2>
+        <div class="row">
+          <div class="col-md-6">{{ form.prospect|as_crispy_field }}</div>
+          <div class="col-md-6">{{ form.student|as_crispy_field }}</div>
+          <div class="col-md-6">{{ form.inquiry_date|as_crispy_field }}</div>
+          <div class="col-md-6">{{ form.channel|as_crispy_field }}</div>
+          <div class="col-12">{{ form.subject|as_crispy_field }}</div>
+          <div class="col-12">{{ form.message|as_crispy_field }}</div>
+          <div class="col-md-6">{{ form.status|as_crispy_field }}</div>
+          <div class="col-md-6">{{ form.assigned_to|as_crispy_field }}</div>
+          {% if form.owner %}<div class="col-md-6">{{ form.owner|as_crispy_field }}</div>{% endif %}
+        </div>
+      </section>
+      <div class="d-flex justify-content-end gap-2">
+        <a class="btn btn-outline-secondary" href="{% url 'core:inquiry-list' %}">Cancel</a>
+        <button class="btn btn-primary" type="submit">{% if object %}Save Inquiry{% else %}Create Inquiry{% endif %}</button>
+      </div>
+    </form>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const modeInputs = document.querySelectorAll('input[name="contact_mode"]');
+    const existingWrap = document.getElementById("existing-contact-wrap");
+    const newWrap = document.getElementById("new-contact-wrap");
+    const contactField = document.getElementById("id_contact");
+    const searchInput = document.getElementById("inquiry-contact-search");
+    const resultsWrap = document.getElementById("inquiry-contact-results");
+    const selectedWrap = document.getElementById("inquiry-contact-selected");
+    const endpoint = "{% url 'core:contact-autocomplete' %}";
+    let timer = null;
+
+    function currentMode() {
+      return document.querySelector('input[name="contact_mode"]:checked')?.value || "existing";
+    }
+    function applyMode() {
+      const useExisting = currentMode() === "existing";
+      existingWrap.classList.toggle("d-none", !useExisting);
+      newWrap.classList.toggle("d-none", useExisting);
+      if (!useExisting) {
+        contactField.value = "";
+        selectedWrap.classList.add("d-none");
+      }
+    }
+    function selectContact(item) {
+      contactField.value = String(item.id);
+      selectedWrap.textContent = `${item.name} · ${item.email || "No email"} · ${item.phone || "No phone"}`;
+      selectedWrap.classList.remove("d-none");
+      resultsWrap.innerHTML = "";
+    }
+    async function searchContacts() {
+      const query = searchInput.value.trim();
+      if (query.length < 2) {
+        resultsWrap.innerHTML = "";
+        return;
+      }
+      resultsWrap.innerHTML = '<div class="list-group-item text-muted">Searching…</div>';
+      const response = await fetch(`${endpoint}?${new URLSearchParams({q: query})}`, {
+        headers: {"X-Requested-With": "XMLHttpRequest"}
+      });
+      const payload = await response.json();
+      resultsWrap.innerHTML = "";
+      if (!(payload.results || []).length) {
+        resultsWrap.innerHTML = '<div class="list-group-item text-muted">No matching Contacts found.</div>';
+        return;
+      }
+      payload.results.forEach((item) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "list-group-item list-group-item-action";
+        button.textContent = `${item.name} · ${item.email || "No email"} · ${item.phone || "No phone"}`;
+        button.addEventListener("click", () => selectContact(item));
+        resultsWrap.appendChild(button);
+      });
+    }
+
+    modeInputs.forEach((input) => input.addEventListener("change", applyMode));
+    searchInput.addEventListener("input", function () {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(searchContacts, 250);
+    });
+    applyMode();
+  }());
+</script>
 {% endblock %}

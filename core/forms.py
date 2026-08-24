@@ -5,6 +5,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Div, Field, Fieldset, HTML, Layout, Row, Submit
+from django.db import transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -34,6 +35,22 @@ from .models import (
 class InquiryForm(forms.ModelForm):
     """Edit the Inquiry event while Contact remains canonical identity."""
 
+    CONTACT_MODE_CHOICES = (
+        ("existing", "Select an existing Contact"),
+        ("new", "Create a new Contact if no match exists"),
+    )
+
+    contact_mode = forms.ChoiceField(
+        choices=CONTACT_MODE_CHOICES,
+        initial="existing",
+        widget=forms.RadioSelect,
+        label="Individual",
+    )
+    new_first_name = forms.CharField(required=False, max_length=100)
+    new_last_name = forms.CharField(required=False, max_length=100)
+    new_email = forms.EmailField(required=False)
+    new_phone_number = forms.CharField(required=False, max_length=30)
+
     class Meta:
         model = Inquiry
         fields = (
@@ -52,7 +69,16 @@ class InquiryForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["contact"].queryset = Contact.objects.order_by("first_name", "last_name")
+        selected_contact_id = (
+            (self.data.get("contact") if self.is_bound else None)
+            or self.initial.get("contact")
+            or (self.instance.contact_id if self.instance and self.instance.contact_id else None)
+        )
+        if hasattr(selected_contact_id, "pk"):
+            selected_contact_id = selected_contact_id.pk
+        self.fields["contact"].required = False
+        self.fields["contact"].queryset = Contact.objects.filter(pk=selected_contact_id)
+        self.fields["contact"].widget = forms.HiddenInput()
         self.fields["prospect"].queryset = Prospect.objects.select_related("contact").order_by(
             "contact__first_name", "contact__last_name"
         )
@@ -62,12 +88,53 @@ class InquiryForm(forms.ModelForm):
         self.fields["contact"].help_text = "Canonical person identity for this Inquiry."
         self.fields["prospect"].help_text = "Optional lifecycle context; must belong to this Contact."
         self.fields["student"].help_text = "Optional lifecycle context; must belong to this Contact."
+        self._matched_contact = None
+        if self.instance and self.instance.contact_id and not self.is_bound:
+            self.initial["contact_mode"] = "existing"
 
     def clean(self):
         cleaned = super().clean()
+        contact_mode = cleaned.get("contact_mode") or "existing"
         contact = cleaned.get("contact")
         prospect = cleaned.get("prospect")
         student = cleaned.get("student")
+
+        if contact_mode == "existing":
+            if not contact:
+                self.add_error("contact", "Search for and select an existing Contact.")
+        else:
+            # Ignore a stale hidden selection after switching to new-contact mode.
+            contact = None
+            cleaned["contact"] = None
+            self.instance.contact_id = None
+            first_name = (cleaned.get("new_first_name") or "").strip()
+            last_name = (cleaned.get("new_last_name") or "").strip()
+            email = (cleaned.get("new_email") or "").strip()
+            phone_number = (cleaned.get("new_phone_number") or "").strip()
+            if not first_name:
+                self.add_error("new_first_name", "First name is required.")
+            if not last_name:
+                self.add_error("new_last_name", "Last name is required.")
+            if not email and not phone_number:
+                raise forms.ValidationError(
+                    "Provide at least an email or phone number for duplicate detection."
+                )
+            if prospect or student:
+                raise forms.ValidationError(
+                    "New Contacts cannot be combined with an existing Prospect or Student."
+                )
+            if first_name and last_name and (email or phone_number):
+                contact = Contact.find_matching_contact(
+                    first_name=first_name,
+                    last_name=last_name,
+                    email=email,
+                    phone_number=phone_number,
+                )
+                self._matched_contact = contact
+                if contact:
+                    cleaned["contact"] = contact
+                    self.instance.contact = contact
+
         if prospect and contact and prospect.contact_id != contact.pk:
             self.add_error("prospect", "Selected Prospect belongs to a different Contact.")
         if student and contact and student.contact.pk != contact.pk:
@@ -75,6 +142,35 @@ class InquiryForm(forms.ModelForm):
         if student and prospect and student.prospect_id != prospect.pk:
             self.add_error("student", "Selected Student does not belong to the selected Prospect.")
         return cleaned
+
+    def save(self, commit=True):
+        inquiry = super().save(commit=False)
+        contact_mode = self.cleaned_data.get("contact_mode") or "existing"
+
+        if not commit:
+            if contact_mode == "new" and not self._matched_contact:
+                inquiry.contact = Contact(
+                    first_name=(self.cleaned_data.get("new_first_name") or "").strip(),
+                    last_name=(self.cleaned_data.get("new_last_name") or "").strip(),
+                    email=(self.cleaned_data.get("new_email") or "").strip() or None,
+                    phone_number=(self.cleaned_data.get("new_phone_number") or "").strip() or None,
+                )
+            return inquiry
+
+        with transaction.atomic():
+            if contact_mode == "new":
+                contact, _ = Contact.get_or_create_from_identity(
+                    first_name=(self.cleaned_data.get("new_first_name") or "").strip(),
+                    last_name=(self.cleaned_data.get("new_last_name") or "").strip(),
+                    email=(self.cleaned_data.get("new_email") or "").strip(),
+                    phone_number=(self.cleaned_data.get("new_phone_number") or "").strip(),
+                )
+                inquiry.contact = contact
+            else:
+                inquiry.contact = self.cleaned_data["contact"]
+            inquiry.save()
+            self.save_m2m()
+        return inquiry
 
 
 class DisbursementDateRangeReportForm(forms.Form):
