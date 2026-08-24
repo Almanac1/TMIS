@@ -1031,6 +1031,7 @@ class Inquiry(TimeStampedModel):
         choices=InquiryStatus.choices,
         default=InquiryStatus.OPEN,
     )
+    is_archived = models.BooleanField(default=False)
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1046,6 +1047,7 @@ class Inquiry(TimeStampedModel):
             models.Index(fields=["prospect", "inquiry_date"]),
             models.Index(fields=["student", "inquiry_date"]),
             models.Index(fields=["status"]),
+            models.Index(fields=["is_archived"]),
             models.Index(fields=["channel"]),
         ]
 

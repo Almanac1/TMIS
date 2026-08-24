@@ -110,6 +110,16 @@ urlpatterns = [
         name="inquiry-autocomplete",
     ),
     path(
+        "inquiries/<str:pk>/archive/",
+        views.InquiryArchiveView.as_view(),
+        name="inquiry-archive",
+    ),
+    path(
+        "inquiries/<str:pk>/restore/",
+        views.InquiryRestoreView.as_view(),
+        name="inquiry-restore",
+    ),
+    path(
         "communications/bulk-send/",
         views.bulk_message_send_view,
         name="communication-bulk-send",

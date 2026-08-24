@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db import connection
 from django.db.models.deletion import ProtectedError
 from django.test import TestCase
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 
 from core.forms import CommunicationForm, InquiryForm
@@ -249,6 +249,52 @@ class InquiryIdentityWorkflowTests(TestCase):
         inquiry.delete()
         communication.refresh_from_db()
         self.assertIsNone(communication.inquiry)
+        self.assertTrue(Contact.objects.filter(pk=self.contact.pk).exists())
+
+    def test_inquiry_archive_preserves_person_history_and_can_be_restored(self):
+        inquiry = self._create_inquiry("Archive safely")
+        communication = Communication.objects.create(
+            owner=self.user,
+            recipient_type=RecipientType.PROSPECT,
+            prospect=self.prospect,
+            inquiry=inquiry,
+            channel=CommunicationChannel.EMAIL,
+            communication_type=CommunicationType.GENERAL,
+            subject="Preserved communication",
+            body="Keep this history.",
+        )
+
+        archive_response = self.client.post(
+            reverse("core:inquiry-archive", kwargs={"pk": inquiry.pk})
+        )
+        inquiry.refresh_from_db()
+        communication.refresh_from_db()
+
+        self.assertEqual(archive_response.status_code, 302)
+        self.assertTrue(inquiry.is_archived)
+        self.assertEqual(communication.inquiry, inquiry)
+        self.assertTrue(Contact.objects.filter(pk=self.contact.pk).exists())
+        self.assertNotContains(
+            self.client.get(reverse("core:inquiry-list")),
+            inquiry.inquiry_number,
+        )
+        self.assertContains(
+            self.client.get(reverse("core:inquiry-list"), {"state": "archived"}),
+            inquiry.inquiry_number,
+        )
+
+        restore_response = self.client.post(
+            reverse("core:inquiry-restore", kwargs={"pk": inquiry.pk})
+        )
+        inquiry.refresh_from_db()
+        self.assertEqual(restore_response.status_code, 302)
+        self.assertFalse(inquiry.is_archived)
+
+    def test_inquiry_hard_delete_route_is_not_exposed(self):
+        inquiry = self._create_inquiry("No hard delete route")
+
+        with self.assertRaises(NoReverseMatch):
+            reverse("core:inquiry-delete", kwargs={"pk": inquiry.pk})
 
     def test_explicit_uuid_is_stable_and_is_database_primary_key(self):
         stable_uuid = uuid.uuid4()

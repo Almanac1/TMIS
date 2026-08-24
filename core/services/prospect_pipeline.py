@@ -100,6 +100,7 @@ def get_prospect_dashboard_metrics(*, user):
         ),
         "open_inquiries": Inquiry.objects.filter(
             prospect__in=all_prospects,
+            is_archived=False,
             status__in=[InquiryStatus.OPEN, InquiryStatus.IN_PROGRESS],
         ).values("pk").distinct().count(),
     }

@@ -89,6 +89,14 @@
               </select>
             </div>
             <div class="col-md-6 col-lg-4">
+              <label for="inquiry-filter-state" class="form-label mb-1">Record state</label>
+              <select id="inquiry-filter-state" class="form-select" name="state">
+                <option value="active"{% if inquiry_filter_values.state == "active" %} selected{% endif %}>Active</option>
+                <option value="archived"{% if inquiry_filter_values.state == "archived" %} selected{% endif %}>Archived</option>
+                <option value="all"{% if inquiry_filter_values.state == "all" %} selected{% endif %}>All</option>
+              </select>
+            </div>
+            <div class="col-md-6 col-lg-4">
               <label for="inquiry-filter-created-from" class="form-label mb-1">Created From</label>
               <input id="inquiry-filter-created-from" type="date" class="form-control" name="created_from" value="{{ inquiry_filter_values.created_from }}">
             </div>
@@ -116,7 +124,7 @@
             <td class="text-nowrap"><a href="{% url detail_url_name obj.pk %}">{{ obj.public_id }}</a></td>
             <td><a href="{% url 'core:contact-detail' obj.contact.pk %}" class="link-primary">{{ obj.contact }}</a>{% if obj.student %}<div class="small text-muted">Student: {{ obj.student.public_id }}</div>{% elif obj.prospect %}<div class="small text-muted">Prospect: {{ obj.prospect.public_id }}</div>{% endif %}</td>
             <td>{{ obj }}</td>
-            <td><div class="actions" role="group"><a class="btn btn-outline-primary" href="{% url detail_url_name obj.pk %}">View</a><a class="btn btn-outline-secondary" href="{% url update_url_name obj.pk %}">Edit</a>{% if can_delete %}<a class="btn btn-outline-danger" href="{% url delete_url_name obj.pk %}">Delete</a>{% endif %}</div></td>
+            <td><div class="actions" role="group"><a class="btn btn-outline-primary" href="{% url detail_url_name obj.pk %}">View</a><a class="btn btn-outline-secondary" href="{% url update_url_name obj.pk %}">Edit</a>{% if obj.is_archived %}<form method="post" action="{% url 'core:inquiry-restore' obj.pk %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-outline-success">Restore</button></form>{% else %}<form method="post" action="{% url 'core:inquiry-archive' obj.pk %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-outline-warning">Archive</button></form>{% endif %}</div></td>
           </tr>
           {% empty %}
           <tr><td colspan="5" class="empty-state"><strong>{% if search_query %}No inquiries found for this search.{% else %}No records found.{% endif %}</strong></td></tr>

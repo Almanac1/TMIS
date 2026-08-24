@@ -294,6 +294,10 @@ CRUD_MODEL_UI_OPTIONS = {
         "allow_delete": False,
         "allow_archive": True,
     },
+    Inquiry: {
+        "allow_delete": False,
+        "allow_archive": True,
+    },
 }
 
 
@@ -1182,6 +1186,14 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
         recipient_scope = (self.request.GET.get("recipient_scope") or "").strip().lower()
         created_from = (self.request.GET.get("created_from") or "").strip()
         created_to = (self.request.GET.get("created_to") or "").strip()
+        state = (self.request.GET.get("state") or "active").strip().lower()
+
+        if state == "archived":
+            queryset = queryset.filter(is_archived=True)
+        elif state == "all":
+            pass
+        else:
+            queryset = queryset.filter(is_archived=False)
 
         if status:
             queryset = queryset.filter(status=status)
@@ -1405,6 +1417,7 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
                 "recipient_scope": (self.request.GET.get("recipient_scope") or "").strip().lower(),
                 "created_from": (self.request.GET.get("created_from") or "").strip(),
                 "created_to": (self.request.GET.get("created_to") or "").strip(),
+                "state": (self.request.GET.get("state") or "active").strip().lower(),
             }
         if self.model is Communication:
             UserModel = get_user_model()
@@ -2394,7 +2407,7 @@ class InquiryAutocompleteView(ProductLoginRequiredMixin, View):
             return JsonResponse({"results": []})
 
         inquiries = scope_queryset_for_user(
-            queryset=Inquiry.objects.select_related("contact"),
+            queryset=Inquiry.objects.filter(is_archived=False).select_related("contact"),
             model=Inquiry,
             user=request.user,
         ).annotate(
@@ -2552,6 +2565,46 @@ class InquiryUpdateView(BaseUpdateView):
     model = Inquiry
     form_class = InquiryForm
     fields = None
+
+
+class InquiryArchiveView(ProductLoginRequiredMixin, View):
+    def post(self, request, pk):
+        inquiry = _resolve_object_by_pk_or_uuid(
+            queryset=scope_queryset_for_user(
+                queryset=Inquiry.objects.all(),
+                model=Inquiry,
+                user=request.user,
+            ),
+            model=Inquiry,
+            identifier=pk,
+        )
+        if inquiry.is_archived:
+            messages.info(request, f"{inquiry.inquiry_number} is already archived.")
+        else:
+            inquiry.is_archived = True
+            inquiry.save(update_fields=["is_archived", "updated_at"])
+            messages.success(request, f"{inquiry.inquiry_number} was archived.")
+        return redirect("core:inquiry-detail", pk=inquiry.pk)
+
+
+class InquiryRestoreView(ProductLoginRequiredMixin, View):
+    def post(self, request, pk):
+        inquiry = _resolve_object_by_pk_or_uuid(
+            queryset=scope_queryset_for_user(
+                queryset=Inquiry.objects.all(),
+                model=Inquiry,
+                user=request.user,
+            ),
+            model=Inquiry,
+            identifier=pk,
+        )
+        if not inquiry.is_archived:
+            messages.info(request, f"{inquiry.inquiry_number} is already active.")
+        else:
+            inquiry.is_archived = False
+            inquiry.save(update_fields=["is_archived", "updated_at"])
+            messages.success(request, f"{inquiry.inquiry_number} was restored.")
+        return redirect("core:inquiry-detail", pk=inquiry.pk)
 
 
 class StudentArchiveView(ProductLoginRequiredMixin, View):

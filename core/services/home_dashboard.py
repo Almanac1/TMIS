@@ -234,7 +234,7 @@ def get_home_dashboard_data(*, user):
 
     # Open operational inquiries
     inquiry_scope = scope_queryset_for_user(
-        queryset=Inquiry.objects.all(),
+        queryset=Inquiry.objects.filter(is_archived=False),
         model=Inquiry,
         user=user,
     )

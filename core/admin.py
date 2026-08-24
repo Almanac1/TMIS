@@ -750,12 +750,15 @@ class InquiryAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "student__prospect__contact__last_name",
         "student__prospect__contact__email",
     )
-    list_filter = ("channel", "status", "inquiry_date", "student", "prospect")
+    list_filter = ("is_archived", "channel", "status", "inquiry_date", "student", "prospect")
     ordering = ("-inquiry_date",)
     list_select_related = ("contact", "prospect", "student", "assigned_to")
     readonly_fields = ("inquiry_number", "uuid", "legacy_int_id", "created_at", "updated_at")
     date_hierarchy = "inquiry_date"
     autocomplete_fields = ("contact", "prospect", "student", "assigned_to")
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Enrollment)
