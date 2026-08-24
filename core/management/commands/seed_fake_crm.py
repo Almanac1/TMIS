@@ -229,8 +229,9 @@ class Command(BaseCommand):
                                 location=session.location,
                                 balance_due_snapshot=enrollment.balance_due,
                                 teacher_amount=Decimal("0.00"),
-                                location_amount=Decimal("0.00"),
+                                national_office_amount=Decimal("0.00"),
                                 ico_amount=Decimal("0.00"),
+                                marketing_amount=Decimal("0.00"),
                                 disbursement_date=(
                                     enrollment.enrollment_date + timedelta(days=7)
                                 ).date(),
@@ -467,13 +468,24 @@ class Command(BaseCommand):
         student, _ = prospect.convert_to_student()
         student.owner = owner
         _, city, province_state, country = rng.choice(self.LOCATIONS)
-        student.date_of_birth = (
+        contact = student.contact
+        contact.date_of_birth = (
             timezone.now().date() - timedelta(days=rng.randint(19 * 365, 62 * 365))
         )
-        student.address = f"{rng.randint(10, 900)} Example Street"
-        student.city = city
-        student.province_state = province_state
-        student.country = country
+        contact.address = f"{rng.randint(10, 900)} Example Street"
+        contact.city = city
+        contact.province_state = province_state
+        contact.country = country
+        contact.save(
+            update_fields=[
+                "date_of_birth",
+                "address",
+                "city",
+                "province_state",
+                "country",
+                "updated_at",
+            ]
+        )
         student.enrollment_status = rng.choice(list(EnrollmentStatus.values))
         student.notes = "Fictional student profile."
         student.save()

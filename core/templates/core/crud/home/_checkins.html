@@ -1,0 +1,27 @@
+<section class="dashboard-card dashboard-checkins" id="student-check-in-reminders" aria-labelledby="checkins-title">
+  <header class="dashboard-card-header">
+    <div><h2 id="checkins-title">Student Check-ins Due</h2><p>Day 3, Day 10, and Day 20 follow-ups</p></div>
+    <span class="dashboard-count">{{ dashboard.check_in_reminders.total_count }}</span>
+  </header>
+  <div class="checkin-group-label">Due Today <span aria-label="{{ dashboard.check_in_reminders.due_today|length }} reminders due today">{{ dashboard.check_in_reminders.due_today|length }}</span></div>
+  <div id="due-reminders">
+    {% for reminder in dashboard.check_in_reminders.due_today %}
+      <a class="dashboard-list-row checkin-row{% if forloop.counter > 3 %} d-none reminder-extra checkin-extra{% endif %}" href="{% url 'core:student-detail' reminder.student.pk %}">
+        <span class="dashboard-row-copy"><strong>{{ reminder.student.prospect }}</strong><small>{{ reminder.course }} · {{ reminder.governor }}</small></span>
+        <span class="checkin-badges"><span class="status-pill reminder-day {% if reminder.day_label == 'Day 3' %}day-3{% elif reminder.day_label == 'Day 10' %}day-10{% else %}day-20{% endif %}">{{ reminder.day_label }}</span><span class="status-pill neutral reminder-status is-today">Today</span></span>
+      </a>
+    {% empty %}<p class="dashboard-empty">No check-ins due today.</p>{% endfor %}
+  </div>
+  <div class="checkin-group-label overdue-label">Overdue <span aria-label="{{ dashboard.check_in_reminders.overdue|length }} missed reminders">{{ dashboard.check_in_reminders.overdue|length }}</span></div>
+  <div id="overdue-reminders" data-reminder-toggle="overdue-reminders">
+    {% for reminder in dashboard.check_in_reminders.overdue %}
+      <a class="dashboard-list-row checkin-row{% if forloop.counter > 3 %} d-none reminder-extra checkin-extra{% endif %}" href="{% url 'core:student-detail' reminder.student.pk %}">
+        <span class="dashboard-row-copy"><strong>{{ reminder.student.prospect }}</strong><small>{{ reminder.course }} · {{ reminder.governor }} · Due {{ reminder.due_date|date:"M j" }}</small></span>
+        <span class="checkin-badges"><span class="status-pill reminder-day {% if reminder.day_label == 'Day 3' %}day-3{% elif reminder.day_label == 'Day 10' %}day-10{% else %}day-20{% endif %}">{{ reminder.day_label }}</span><span class="status-pill warning reminder-status is-overdue">{{ reminder.days_overdue }}d overdue</span></span>
+      </a>
+    {% empty %}<p class="dashboard-empty">No overdue check-ins.</p>{% endfor %}
+  </div>
+  {% if dashboard.check_in_reminders.total_count > 6 %}
+    <button class="dashboard-card-footer" type="button" data-checkin-expand data-reminder-toggle="due-reminders" aria-expanded="false">View all check-ins <i class="bi bi-arrow-right"></i></button>
+  {% endif %}
+</section>

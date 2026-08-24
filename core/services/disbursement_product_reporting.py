@@ -11,7 +11,7 @@ def get_disbursement_reporting_data(*, start_date, end_date, report_by, teacher=
 
     report_by:
     - teacher => totals from teacher_amount
-    - location => totals from location_amount
+    - location => totals from national_office_amount
     """
     queryset = (
         Disbursement.objects.exclude(status=DisbursementStatus.CANCELLED)
@@ -24,7 +24,7 @@ def get_disbursement_reporting_data(*, start_date, end_date, report_by, teacher=
     if location:
         queryset = queryset.filter(location=location)
 
-    amount_field = "teacher_amount" if report_by == "teacher" else "location_amount"
+    amount_field = "teacher_amount" if report_by == "teacher" else "national_office_amount"
 
     total_amount = queryset.aggregate(total=Sum(amount_field)).get("total") or Decimal("0.00")
 

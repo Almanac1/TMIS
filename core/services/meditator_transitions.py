@@ -165,6 +165,9 @@ def evaluate_student_meditator_eligibility(student: Student) -> MeditatorEligibi
 def ensure_meditator_transition_for_student(student: Student) -> Meditator | None:
     if not student or not student.pk:
         return None
+    contact = student.contact
+    if contact is None:
+        return None
     prospect = student.prospect
     if (
         student.enrollment_status == EnrollmentStatus.INACTIVE
@@ -190,6 +193,25 @@ def ensure_meditator_transition_for_student(student: Student) -> Meditator | Non
     }
 
     with transaction.atomic():
+        # Lock the lifecycle parent and re-check its canonical identity before
+        # creating/updating the one-to-one Meditator record. Meditator stores no
+        # duplicate name, email, phone, or Contact foreign key.
+        student = (
+            Student.objects.select_for_update()
+            .select_related("prospect__contact")
+            .get(pk=student.pk)
+        )
+        if student.contact != contact:
+            return None
+        prospect = student.prospect
+        if (
+            student.enrollment_status == EnrollmentStatus.INACTIVE
+            or prospect.status != ProspectStatus.CONVERTED
+            or not prospect.converted_to_student
+            or prospect.converted_student_id != student.pk
+            or prospect.converted_at is None
+        ):
+            return None
         meditator, created = Meditator.objects.get_or_create(
             student=student,
             defaults={

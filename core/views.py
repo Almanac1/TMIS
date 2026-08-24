@@ -12,7 +12,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.files.base import ContentFile
 from django.core.mail import EmailMessage
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
 from django.db.models.functions import Coalesce, Concat
@@ -82,7 +82,7 @@ from .services.prospect_pipeline import (
 )
 from .services.disbursement_product_reporting import get_disbursement_reporting_data
 from .services.ownership import scope_queryset_for_user
-from .services.teacher_earnings import get_teacher_earnings_dashboard_data
+from .services.governor_compensation import get_governor_compensation_data
 from .services.home_dashboard import get_home_dashboard_data
 from .services.invoicing import generate_invoice_for_enrollment
 from .services.prospect_conversion import (
@@ -696,7 +696,11 @@ class TeacherEarningsDashboardView(ProductLoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context.update(get_teacher_earnings_dashboard_data())
+        compensation = get_governor_compensation_data(user=self.request.user)
+        if not compensation["can_view"]:
+            raise PermissionDenied("Governor compensation is limited to Governors and administrators.")
+        context.update(compensation)
+        context["generated_on"] = timezone.localdate()
         return context
 
 
@@ -822,12 +826,19 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
             "last_name__icontains",
             "email__icontains",
             "phone_number__icontains",
+            "address__icontains",
+            "city__icontains",
+            "province_state__icontains",
+            "country__icontains",
         ],
         Student: [
             "prospect__contact__first_name__icontains",
             "prospect__contact__last_name__icontains",
             "prospect__contact__email__icontains",
             "prospect__contact__phone_number__icontains",
+            "prospect__contact__city__icontains",
+            "prospect__contact__province_state__icontains",
+            "prospect__contact__country__icontains",
             "enrollment_status__icontains",
             "teacher__first_name__icontains",
             "teacher__last_name__icontains",

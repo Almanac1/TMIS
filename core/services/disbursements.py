@@ -32,8 +32,9 @@ def generate_disbursement_for_enrollment(enrollment: Enrollment):
                 location=enrollment_locked.session.location,
                 balance_due_snapshot=enrollment_locked.balance_due or Decimal("0.00"),
                 teacher_amount=Decimal("0.00"),
-                location_amount=Decimal("0.00"),
+                national_office_amount=Decimal("0.00"),
                 ico_amount=Decimal("0.00"),
+                marketing_amount=Decimal("0.00"),
                 disbursement_date=timezone.localdate(),
                 status=DisbursementStatus.PENDING,
             )

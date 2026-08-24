@@ -1,0 +1,14 @@
+<section class="dashboard-card dashboard-followups" aria-labelledby="followups-title">
+  <header class="dashboard-card-header">
+    <div><h2 id="followups-title">Follow-ups Requiring Attention</h2><p>Oldest or not-yet-contacted prospects first</p></div>
+    <span class="dashboard-count">{{ dashboard.operations.attention_prospects|length }}</span>
+  </header>
+  {% for prospect in dashboard.operations.attention_prospects %}
+    <a class="dashboard-list-row followup-row" href="{% url 'core:prospect-detail' prospect.pk %}">
+      <span class="dashboard-row-icon"><i class="bi bi-calendar2-check"></i></span>
+      <span class="dashboard-row-copy"><strong>{{ prospect }}</strong><small>{% if prospect.teacher %}{{ prospect.teacher }}{% elif prospect.owner %}{{ prospect.owner.get_full_name|default:prospect.owner.username }}{% else %}Unassigned{% endif %} · {% if prospect.last_contact %}Last contact {{ prospect.last_contact|date:"M j" }}{% else %}Never contacted{% endif %}</small></span>
+      <span class="followup-meta"><span class="attempt-pill">{{ prospect.contact_attempts }} attempt{{ prospect.contact_attempts|pluralize }}</span><small>{{ prospect.dashboard_next_action }}</small></span>
+    </a>
+  {% empty %}<p class="dashboard-empty">No prospects currently require attention.</p>{% endfor %}
+  <a class="dashboard-card-footer" href="{% url 'core:prospect-pipeline-list' %}">Open prospect pipeline <i class="bi bi-arrow-right"></i></a>
+</section>

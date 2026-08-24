@@ -160,14 +160,19 @@ class StudentDuplicatePreventionTests(TestCase):
         )
         Student.objects.create(prospect=first_prospect)
 
-        duplicate_candidate = Prospect.objects.create(
-            contact=Contact.objects.create(
-                first_name="Liam",
-                last_name="Mensah",
-                email="liam.two@example.com",
-                phone_number="5551012020",
-            ),
+        duplicate_contact = Contact(
+            first_name="Liam",
+            last_name="Mensah",
+            email="liam.two@example.com",
+            phone_number="5551012020",
         )
+        with self.assertRaises(ValidationError):
+            duplicate_contact.save()
+
+        # Simulate a legacy/imported duplicate that bypassed model validation;
+        # conversion remains a second line of defence.
+        Contact.objects.bulk_create([duplicate_contact])
+        duplicate_candidate = Prospect.objects.create(contact=duplicate_contact)
 
         self.assertEqual(
             duplicate_candidate.find_potential_duplicate_student().pk,

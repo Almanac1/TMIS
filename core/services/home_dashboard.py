@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-from django.db.models import Count, F, OuterRef, Q, Subquery, Sum, Value
+from django.db.models import Count, F, Max, Q, Sum, Value
 from django.db.models.functions import Coalesce, TruncMonth
 from django.utils import timezone
 
@@ -11,8 +11,7 @@ from core.models import (
     Communication,
     CommunicationType,
     CourseSession,
-    Disbursement,
-    DisbursementStatus,
+    DeliveryStatus,
     Enrollment,
     EnrollmentStatus,
     Inquiry,
@@ -25,7 +24,7 @@ from core.models import (
     Student,
 )
 from core.services.prospect_pipeline import get_user_scoped_prospect_queryset
-from core.services.ownership import scope_queryset_for_user
+from core.services.governor_compensation import get_governor_compensation_data
 
 
 CHECK_IN_DAY_OFFSETS = (3, 10, 20)
@@ -75,30 +74,45 @@ def _is_check_in_completed_for_window(sent_dates, due_date, next_due_date=None):
     return False
 
 
-def _build_student_check_in_reminders(*, user, today):
-    intro_enrollment_subquery = (
-        Enrollment.objects.filter(
-            student=OuterRef("pk"),
-            session__course__name="TM Introductory Program",
-        )
-        .order_by("enrollment_date")
-        .values("enrollment_date")[:1]
-    )
+def _get_visible_enrollments(*, user):
+    queryset = Enrollment.objects.all()
+    if not user or not getattr(user, "is_authenticated", False):
+        return queryset.none()
+    if user.is_staff or user.is_superuser:
+        return queryset
+    teacher = getattr(user, "teacher_profile", None)
+    if teacher is not None:
+        return queryset.filter(session__teacher=teacher)
+    return queryset.filter(student__owner=user)
 
+
+def _next_prospect_action(prospect):
+    if not prospect.last_contact:
+        return "Make first contact"
+    if prospect.status == ProspectStatus.QUALIFIED:
+        return "Review enrollment readiness"
+    return "Follow up"
+
+
+def _build_student_check_in_reminders(*, user, today):
+    intro_enrollments = list(
+        _get_visible_enrollments(user=user)
+        .filter(session__course__name="TM Introductory Program")
+        .select_related("course", "session__teacher")
+        .order_by("student_id", "enrollment_date", "pk")
+    )
+    intro_by_student = {}
+    for enrollment in intro_enrollments:
+        intro_by_student.setdefault(enrollment.student_id, enrollment)
     visible_students = (
-        scope_queryset_for_user(
-            queryset=Student.objects.filter(
-                enrollment_status__in=[
-                    EnrollmentStatus.ACTIVE,
-                    EnrollmentStatus.ENROLLED,
-                ]
-            ),
-            model=Student,
-            user=user,
+        Student.objects.filter(
+            pk__in=intro_by_student,
+            enrollment_status__in=[
+                EnrollmentStatus.ACTIVE,
+                EnrollmentStatus.ENROLLED,
+            ],
         )
         .select_related("prospect", "prospect__contact", "teacher", "owner")
-        .annotate(check_in_anchor_dt=Subquery(intro_enrollment_subquery))
-        .exclude(check_in_anchor_dt__isnull=True)
     )
 
     students = list(visible_students)
@@ -107,6 +121,7 @@ def _build_student_check_in_reminders(*, user, today):
             "anchor_description": CHECK_IN_ANCHOR_DESCRIPTION,
             "due_today": [],
             "overdue": [],
+            "total_count": 0,
         }
 
     student_ids = [student.pk for student in students]
@@ -129,7 +144,8 @@ def _build_student_check_in_reminders(*, user, today):
     due_today = []
     overdue = []
     for student in students:
-        anchor_dt = student.check_in_anchor_dt
+        intro_enrollment = intro_by_student[student.pk]
+        anchor_dt = intro_enrollment.enrollment_date
         anchor_date = anchor_dt.date() if hasattr(anchor_dt, "date") else anchor_dt
         sent_dates = follow_up_map.get(student.pk, [])
 
@@ -151,6 +167,9 @@ def _build_student_check_in_reminders(*, user, today):
 
             entry = {
                 "student": student,
+                "enrollment": intro_enrollment,
+                "course": intro_enrollment.course,
+                "governor": intro_enrollment.session.teacher,
                 "day_label": f"Day {day}",
                 "due_date": due_date,
             }
@@ -167,102 +186,53 @@ def _build_student_check_in_reminders(*, user, today):
         "anchor_description": CHECK_IN_ANCHOR_DESCRIPTION,
         "due_today": due_today,
         "overdue": overdue,
+        "total_count": len(due_today) + len(overdue),
     }
 
 
 def get_home_dashboard_data(*, user):
     today = timezone.localdate()
-    now = timezone.now()
     month_starts = _last_n_month_starts(today, months=6)
     month_labels = [month.strftime("%b %Y") for month in month_starts]
     month_start_floor = month_starts[0]
 
     prospects = get_user_scoped_prospect_queryset(user)
+    all_prospects = get_user_scoped_prospect_queryset(user, include_archived=True)
 
     teacher_profile = None
     if user.is_authenticated and not user.is_staff and not user.is_superuser:
         teacher_profile = getattr(user, "teacher_profile", None)
 
-    # 1) Prospect funnel
-    funnel_labels = ["New", "Contacted", "Qualified", "Converted", "Inactive"]
-    funnel_values = [
-        prospects.filter(status=ProspectStatus.NEW).count(),
-        prospects.filter(status=ProspectStatus.CONTACTED).count(),
-        prospects.filter(status=ProspectStatus.QUALIFIED).count(),
-        prospects.filter(status=ProspectStatus.CONVERTED).count(),
-        prospects.filter(status=ProspectStatus.INACTIVE).count(),
-    ]
-
-    # 2) Conversion trend
-    lead_rows = (
-        prospects.filter(created_at__date__gte=month_start_floor)
-        .annotate(month=TruncMonth("created_at"))
-        .values("month")
-        .annotate(total=Count("pk"))
-        .order_by("month")
+    enrollment_scope = _get_visible_enrollments(user=user).exclude(
+        status__in=[
+            EnrollmentStatus.CANCELLED,
+            EnrollmentStatus.WITHDRAWN,
+            EnrollmentStatus.INACTIVE,
+        ]
     )
-    conversion_rows = (
-        Student.objects.filter(
-            prospect__in=prospects,
-            created_at__date__gte=month_start_floor,
-        )
-        .annotate(month=TruncMonth("created_at"))
-        .values("month")
-        .annotate(total=Count("pk"))
-        .order_by("month")
-    )
-    lead_map = _month_series_map(lead_rows, "total")
-    conversion_map = _month_series_map(conversion_rows, "total")
-    lead_trend = [lead_map.get(month, 0) for month in month_starts]
-    conversion_trend = [conversion_map.get(month, 0) for month in month_starts]
 
-    # 3) Follow-up health (owner-scoped)
+    # KPI conversion totals
+    converted_filter = (
+        Q(status=ProspectStatus.CONVERTED)
+        | Q(converted_to_student=True)
+        | Q(converted_student__isnull=False)
+    )
+    prospect_total = all_prospects.count()
+    converted_total = all_prospects.filter(converted_filter).distinct().count()
+    conversion_percent = round((converted_total / prospect_total) * 100, 1) if prospect_total else 0
+
+    enrollment_course_rows = list(
+        enrollment_scope.values("course__name")
+        .annotate(total=Count("pk"))
+        .order_by("-total", "course__name")[:8]
+    )
+
+    # Open operational inquiries
     inquiry_scope = Inquiry.objects.filter(prospect__in=prospects)
-
-    stale_cutoff = now - timedelta(days=3)
-    follow_ups_logged_week = Communication.objects.filter(
-        prospect__in=prospects,
-        recipient_type=RecipientType.PROSPECT,
-        communication_type=CommunicationType.FOLLOW_UP,
-        sent_at__gte=now - timedelta(days=7),
-    ).count()
     open_inquiries = inquiry_scope.filter(status=InquiryStatus.OPEN).count()
     in_progress_inquiries = inquiry_scope.filter(status=InquiryStatus.IN_PROGRESS).count()
-    stale_inquiries = inquiry_scope.filter(
-        status__in=[InquiryStatus.OPEN, InquiryStatus.IN_PROGRESS],
-        inquiry_date__lt=stale_cutoff,
-    ).count()
 
-    # 4) Inquiry response speed + SLA
-    first_response_subquery = (
-        Communication.objects.filter(
-            prospect=OuterRef("prospect"),
-            recipient_type=RecipientType.PROSPECT,
-            sent_at__isnull=False,
-            sent_at__gte=OuterRef("inquiry_date"),
-        )
-        .order_by("sent_at")
-        .values("sent_at")[:1]
-    )
-    response_rows = inquiry_scope.annotate(
-        first_response_at=Subquery(first_response_subquery)
-    ).values("inquiry_date", "first_response_at")
-    response_hours = []
-    for row in response_rows:
-        first_response_at = row.get("first_response_at")
-        inquiry_date = row.get("inquiry_date")
-        if not first_response_at or not inquiry_date:
-            continue
-        delta_seconds = (first_response_at - inquiry_date).total_seconds()
-        if delta_seconds >= 0:
-            response_hours.append(delta_seconds / 3600)
-    responded_count = len(response_hours)
-    avg_response_hours = round(sum(response_hours) / responded_count, 2) if responded_count else 0
-    within_sla_count = len([value for value in response_hours if value <= 24])
-    sla_percent = round((within_sla_count / responded_count) * 100, 1) if responded_count else 0
-    unresponded_count = max(inquiry_scope.count() - responded_count, 0)
-
-    # 5) Upcoming sessions and capacity
+    # Upcoming sessions
     sessions_scope = CourseSession.objects.filter(
         start_date__date__gte=today,
         start_date__date__lte=today + timedelta(days=14),
@@ -271,28 +241,17 @@ def get_home_dashboard_data(*, user):
         sessions_scope = sessions_scope.filter(teacher=teacher_profile)
     elif not (user.is_staff or user.is_superuser):
         sessions_scope = sessions_scope.filter(
-            enrollments__student__prospect__in=prospects
+            Q(owner=user) | Q(enrollments__in=enrollment_scope)
         ).distinct()
 
     upcoming_rows = (
         sessions_scope.annotate(enrolled_count=Count("enrollments", distinct=True))
-        .select_related("course")
-        .order_by("start_date")[:8]
+        .select_related("course", "teacher", "location")
+        .order_by("start_date")[:5]
     )
-    session_labels = []
-    capacity_data = []
-    enrolled_data = []
-    for session in upcoming_rows:
-        session_labels.append(f"{session.start_date:%b %d} · {session.session_name or session.course.name}")
-        capacity_data.append(session.capacity or 0)
-        enrolled_data.append(session.enrolled_count or 0)
 
-    # 6) Revenue snapshot + aging
-    invoice_scope = Invoice.objects.filter(
-        enrollment__student__prospect__in=prospects
-    ).distinct()
-    if teacher_profile:
-        invoice_scope = invoice_scope.filter(enrollment__session__teacher=teacher_profile)
+    # Revenue snapshot and monthly trend
+    invoice_scope = Invoice.objects.filter(enrollment__in=enrollment_scope).distinct()
 
     invoice_scope = invoice_scope.annotate(
         paid_confirmed=Coalesce(
@@ -319,181 +278,86 @@ def get_home_dashboard_data(*, user):
         total=Coalesce(Sum("outstanding"), Value(Decimal("0.00")))
     )["total"]
 
-    overdue_total = invoice_scope.filter(
-        due_date__lt=today,
-        outstanding__gt=0,
-    ).aggregate(total=Coalesce(Sum("outstanding"), Value(Decimal("0.00"))))["total"]
-
-    bucket_0_30 = Decimal("0.00")
-    bucket_31_60 = Decimal("0.00")
-    bucket_61_plus = Decimal("0.00")
-    for invoice in invoice_scope.filter(outstanding__gt=0):
-        if not invoice.due_date:
-            continue
-        days_overdue = (today - invoice.due_date).days
-        if days_overdue <= 0:
-            continue
-        if days_overdue <= 30:
-            bucket_0_30 += invoice.outstanding
-        elif days_overdue <= 60:
-            bucket_31_60 += invoice.outstanding
-        else:
-            bucket_61_plus += invoice.outstanding
-
-    # 7) Disbursement status and trend
-    disbursement_scope = Disbursement.objects.exclude(status=DisbursementStatus.CANCELLED)
-    if teacher_profile:
-        disbursement_scope = disbursement_scope.filter(teacher=teacher_profile)
-    elif not (user.is_staff or user.is_superuser):
-        disbursement_scope = disbursement_scope.filter(
-            enrollment__student__prospect__in=prospects
-        ).distinct()
-
-    disbursement_status_values = [
-        disbursement_scope.filter(status=DisbursementStatus.PENDING).count(),
-        disbursement_scope.filter(status=DisbursementStatus.APPROVED).count(),
-        disbursement_scope.filter(status=DisbursementStatus.PAID).count(),
-    ]
-    disbursement_month_rows = (
-        disbursement_scope.filter(disbursement_date__gte=month_start_floor)
-        .annotate(month=TruncMonth("disbursement_date"))
+    invoice_month_rows = (
+        invoice_scope.filter(issue_date__gte=month_start_floor)
+        .annotate(month=TruncMonth("issue_date"))
         .values("month")
-        .annotate(total=Coalesce(Sum("balance_due_snapshot"), Value(Decimal("0.00"))))
+        .annotate(total=Coalesce(Sum("total_amount"), Value(Decimal("0.00"))))
         .order_by("month")
     )
-    disbursement_month_map = _month_series_map(disbursement_month_rows, "total")
-    disbursement_trend = [_to_float(disbursement_month_map.get(month, Decimal("0.00"))) for month in month_starts]
+    payment_scope = Payment.objects.filter(
+        invoice__enrollment__in=enrollment_scope,
+        confirmation_status=PaymentConfirmationStatus.CONFIRMED,
+    )
+    payment_month_rows = (
+        payment_scope.filter(payment_date__date__gte=month_start_floor)
+        .annotate(month=TruncMonth("payment_date"))
+        .values("month")
+        .annotate(total=Coalesce(Sum("amount_paid"), Value(Decimal("0.00"))))
+        .order_by("month")
+    )
+    invoice_month_map = _month_series_map(invoice_month_rows, "total")
+    payment_month_map = _month_series_map(payment_month_rows, "total")
 
-    # 8) Top source performance
-    source_rows = (
-        prospects.values("source")
+    # Compact operational follow-up widget
+    attention_prospects = list(
+        prospects.select_related("contact", "owner", "teacher", "course_interest")
         .annotate(
-            total=Count("pk"),
-            converted=Count("pk", filter=Q(student_record__isnull=False)),
+            last_contact=Max(
+                "communications__sent_at",
+                filter=Q(communications__sent_at__isnull=False),
+            ),
+            contact_attempts=Count(
+                "communications",
+                filter=(
+                    Q(communications__sent_at__isnull=False)
+                    | ~Q(communications__delivery_status=DeliveryStatus.QUEUED)
+                ),
+                distinct=True,
+            ),
         )
-        .order_by("-total")[:8]
+        .order_by(F("last_contact").asc(nulls_first=True), "created_at")[:5]
     )
-    source_labels = []
-    source_counts = []
-    source_conversion_rates = []
-    for row in source_rows:
-        source = (row.get("source") or "").strip() or "Unknown"
-        total = row.get("total", 0) or 0
-        converted = row.get("converted", 0) or 0
-        rate = round((converted / total) * 100, 1) if total else 0
-        source_labels.append(source)
-        source_counts.append(total)
-        source_conversion_rates.append(rate)
+    for prospect in attention_prospects:
+        prospect.dashboard_next_action = _next_prospect_action(prospect)
 
-    # 9) Dashboard module previews (first 5 each, owner-scoped)
-    student_preview_qs = (
-        scope_queryset_for_user(
-            queryset=Student.objects.all(),
-            model=Student,
-            user=user,
-        )
-        .select_related("prospect", "teacher")
-        .order_by("-created_at")[:5]
-    )
-    inquiry_preview_qs = (
-        scope_queryset_for_user(
-            queryset=Inquiry.objects.all(),
-            model=Inquiry,
-            user=user,
-        )
-        .select_related("prospect", "student__prospect")
-        .order_by("-inquiry_date", "-created_at")[:5]
-    )
-    prospect_preview_qs = (
-        prospects.select_related("owner").order_by("-created_at")[:5]
-    )
     check_in_reminders = _build_student_check_in_reminders(user=user, today=today)
+    governor_compensation = get_governor_compensation_data(user=user)
 
     return {
         "kpis": {
-            "total_prospects": prospects.count(),
+            "total_prospects": prospect_total,
+            "converted_students": converted_total,
+            "conversion_percent": conversion_percent,
             "active_students": Student.objects.filter(
-                prospect__in=prospects
-            ).exclude(enrollment_status="inactive").count(),
+                enrollments__in=enrollment_scope
+            ).exclude(enrollment_status="inactive").distinct().count(),
             "open_inquiries": open_inquiries + in_progress_inquiries,
             "outstanding_amount": _to_float(outstanding_total),
             "invoiced_total": _to_float(invoiced_total),
             "collected_total": _to_float(confirmed_collected),
-            "overdue_total": _to_float(overdue_total),
-            "avg_response_hours": avg_response_hours,
-            "sla_percent": sla_percent,
-        },
-        "follow_up_health": {
-            "open_inquiries": open_inquiries,
-            "in_progress_inquiries": in_progress_inquiries,
-            "stale_inquiries": stale_inquiries,
-            "follow_ups_logged_week": follow_ups_logged_week,
-        },
-        "response_speed": {
-            "responded_count": responded_count,
-            "unresponded_count": unresponded_count,
-            "within_sla_count": within_sla_count,
-            "outside_sla_count": max(responded_count - within_sla_count, 0),
         },
         "charts": {
-            "funnel": {
-                "labels": funnel_labels,
-                "values": funnel_values,
+            "enrollments_by_course": {
+                "labels": [row["course__name"] or "Unassigned" for row in enrollment_course_rows],
+                "values": [row["total"] for row in enrollment_course_rows],
             },
-            "conversion_trend": {
+            "revenue_trend": {
                 "labels": month_labels,
-                "leads": lead_trend,
-                "converted": conversion_trend,
-            },
-            "follow_up_health": {
-                "labels": ["Open", "In Progress", "Stale", "Follow-ups (7d)"],
-                "values": [
-                    open_inquiries,
-                    in_progress_inquiries,
-                    stale_inquiries,
-                    follow_ups_logged_week,
+                "invoiced": [
+                    _to_float(invoice_month_map.get(month, Decimal("0.00")))
+                    for month in month_starts
                 ],
-            },
-            "response_sla": {
-                "labels": ["Within 24h", "After 24h", "No Response"],
-                "values": [
-                    within_sla_count,
-                    max(responded_count - within_sla_count, 0),
-                    unresponded_count,
+                "received": [
+                    _to_float(payment_month_map.get(month, Decimal("0.00")))
+                    for month in month_starts
                 ],
-            },
-            "sessions_capacity": {
-                "labels": session_labels,
-                "capacity": capacity_data,
-                "enrolled": enrolled_data,
-            },
-            "revenue_aging": {
-                "labels": ["0-30 Days", "31-60 Days", "61+ Days"],
-                "values": [
-                    _to_float(bucket_0_30),
-                    _to_float(bucket_31_60),
-                    _to_float(bucket_61_plus),
-                ],
-            },
-            "disbursement_status": {
-                "labels": ["Pending", "Approved", "Paid"],
-                "values": disbursement_status_values,
-            },
-            "disbursement_trend": {
-                "labels": month_labels,
-                "values": disbursement_trend,
-            },
-            "source_performance": {
-                "labels": source_labels,
-                "totals": source_counts,
-                "conversion_rates": source_conversion_rates,
             },
         },
-        "show_disbursement_block": bool(teacher_profile or user.is_staff or user.is_superuser),
-        "previews": {
-            "prospects": prospect_preview_qs,
-            "students": student_preview_qs,
-            "inquiries": inquiry_preview_qs,
+        "governor_compensation": governor_compensation,
+        "operations": {
+            "upcoming_sessions": upcoming_rows,
+            "attention_prospects": attention_prospects,
         },
         "check_in_reminders": check_in_reminders,
     }

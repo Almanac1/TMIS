@@ -17,7 +17,7 @@ def get_location_disbursement_total(location: Location, start_date, end_date) ->
     return (
         _base_disbursement_queryset(start_date, end_date)
         .filter(location=location)
-        .aggregate(total=Sum("location_amount"))["total"]
+        .aggregate(total=Sum("national_office_amount"))["total"]
         or Decimal("0.00")
     )
 
@@ -46,8 +46,9 @@ def get_disbursement_totals(start_date, end_date, teacher=None, location=None, s
 
     return queryset.aggregate(
         teacher_total=Sum("teacher_amount"),
-        location_total=Sum("location_amount"),
+        national_office_total=Sum("national_office_amount"),
         ico_total=Sum("ico_amount"),
+        marketing_total=Sum("marketing_amount"),
         gross_total=Sum("balance_due_snapshot"),
     )
 
@@ -56,7 +57,7 @@ def get_disbursed_total_for_period(*, report_by, start_date, end_date, teacher=N
     """
     Return one total amount based on report dimension and date range:
     - report_by=teacher => sum(teacher_amount) for selected teacher
-    - report_by=location => sum(location_amount) for selected location
+    - report_by=location => sum(national_office_amount) for selected location
     """
     if report_by == "teacher":
         if not teacher:

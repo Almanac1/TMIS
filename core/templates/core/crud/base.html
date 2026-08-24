@@ -17,15 +17,34 @@
   >
   <style>
     :root {
+      /* Shared TMIS brand and semantic chart palette. */
+      --color-brand-primary: #54285f;
+      --color-brand-primary-rgb: 84, 40, 95;
+      --color-success: #249653;
+      --color-success-rgb: 36, 150, 83;
+      --color-warning: #d97706;
+      --color-danger: #c2413b;
+      --color-neutral: #94a3b8;
+      --color-neutral-rgb: 148, 163, 184;
+      --color-success-soft: #eaf8ef;
+      --color-warning-soft: #fff5e8;
+      --color-danger-soft: #fdf0ef;
+      --brand-primary: var(--color-brand-primary);
+      --brand-primary-rgb: var(--color-brand-primary-rgb);
+      --brand-primary-hover: #43204c;
+      --brand-primary-soft: #f8f3fa;
+      --brand-primary-subtle: #f4eef6;
+      --brand-primary-active: #eee5f1;
+      --brand-primary-border: #d9cadd;
       --crm-bg: #f6f7fb;
       --crm-border: #eceef3;
       --crm-text: #141824;
       --crm-muted: #6d7485;
-      --crm-hover: #f4f0f6;
-      --crm-active: #efe7f2;
-      --crm-primary: #462850;
-      --crm-primary-strong: #371f40;
-      --crm-primary-soft: #f8f3fa;
+      --crm-hover: var(--brand-primary-subtle);
+      --crm-active: var(--brand-primary-active);
+      --crm-primary: var(--brand-primary);
+      --crm-primary-strong: var(--brand-primary-hover);
+      --crm-primary-soft: var(--brand-primary-soft);
       --icon-rail-width: 70px;
       --main-sidebar-width: 240px;
     }
@@ -326,7 +345,7 @@
 
     .crud-list-shell .search-input:focus {
       border-color: #bda4c6;
-      box-shadow: 0 0 0 0.2rem rgba(70, 40, 80, 0.13);
+      box-shadow: 0 0 0 0.2rem rgba(var(--brand-primary-rgb), 0.13);
     }
 
     .crud-list-shell .search-btn {

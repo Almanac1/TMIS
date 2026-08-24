@@ -1,0 +1,14 @@
+<section class="dashboard-card dashboard-upcoming" aria-labelledby="upcoming-title">
+  <header class="dashboard-card-header">
+    <div><h2 id="upcoming-title">Upcoming Sessions / Meetings</h2><p>Scheduled activity in the next 14 days</p></div>
+    <span class="dashboard-count">{{ dashboard.operations.upcoming_sessions|length }}</span>
+  </header>
+  {% for session in dashboard.operations.upcoming_sessions %}
+    <a class="dashboard-list-row session-row" href="{% url 'core:coursesession-detail' session.pk %}">
+      <span class="dashboard-row-icon"><i class="bi bi-calendar3"></i></span>
+      <span class="dashboard-row-copy"><strong>{{ session.session_name|default:session.course.name }}</strong><small>{{ session.teacher }} · {{ session.location }}</small></span>
+      <time datetime="{{ session.start_date|date:'c' }}">{{ session.start_date|date:"M j, g:i A" }}</time>
+    </a>
+  {% empty %}<p class="dashboard-empty">No sessions scheduled in the next 14 days.</p>{% endfor %}
+  <a class="dashboard-card-footer" href="{% url 'core:coursesession-list' %}">View all sessions <i class="bi bi-arrow-right"></i></a>
+</section>

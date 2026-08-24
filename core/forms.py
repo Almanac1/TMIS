@@ -5,6 +5,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Div, Field, Fieldset, HTML, Layout, Row, Submit
+from django.db import transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -1076,14 +1077,31 @@ class ProspectForm(forms.ModelForm):
 
 
 class StudentForm(forms.ModelForm):
+    date_of_birth = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    address = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
+    city = forms.CharField(required=False, max_length=100)
+    province_state = forms.CharField(required=False, max_length=100)
+    country = forms.CharField(required=False, max_length=100)
+
     class Meta:
         model = Student
-        fields = "__all__"
+        fields = (
+            "prospect",
+            "teacher",
+            "enrollment_status",
+            "notes",
+            "owner",
+        )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if "date_of_birth" in self.fields:
-            self.fields["date_of_birth"].widget = forms.DateInput(attrs={"type": "date"})
+        contact = self.instance.contact if self.instance and self.instance.pk else None
+        if contact:
+            for field in ("date_of_birth", "address", "city", "province_state", "country"):
+                self.fields[field].initial = getattr(contact, field)
+        if self.instance and self.instance.pk:
+            self.fields["prospect"].disabled = True
+            self.fields["prospect"].help_text = "Identity is managed through the linked Contact and cannot be reassigned."
         self.helper = FormHelper()
         self.helper.form_method = "post"
         self.helper.layout = Layout(
@@ -1101,6 +1119,28 @@ class StudentForm(forms.ModelForm):
         if prospect and not prospect.contact_id:
             self.add_error("prospect", "Selected prospect must have a linked contact.")
         return cleaned
+
+    def save(self, commit=True):
+        with transaction.atomic():
+            student = super().save(commit=commit)
+            contact = student.contact
+            if contact:
+                for field in ("date_of_birth", "address", "city", "province_state", "country"):
+                    value = self.cleaned_data.get(field)
+                    setattr(contact, field, (value or None) if field == "date_of_birth" else (value or ""))
+                contact.full_clean()
+                if commit:
+                    contact.save(
+                        update_fields=[
+                            "date_of_birth",
+                            "address",
+                            "city",
+                            "province_state",
+                            "country",
+                            "updated_at",
+                        ]
+                    )
+            return student
 
 
 class StudentCreateForm(forms.ModelForm):
@@ -1121,16 +1161,16 @@ class StudentCreateForm(forms.ModelForm):
     new_phone_number = forms.CharField(required=False, max_length=30)
     new_source = forms.CharField(required=False, max_length=100)
     new_notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    date_of_birth = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    address = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
+    city = forms.CharField(required=False, max_length=100)
+    province_state = forms.CharField(required=False, max_length=100)
+    country = forms.CharField(required=False, max_length=100)
 
     class Meta:
         model = Student
         fields = (
             "teacher",
-            "date_of_birth",
-            "address",
-            "city",
-            "province_state",
-            "country",
             "enrollment_status",
             "notes",
             "owner",
@@ -1138,8 +1178,6 @@ class StudentCreateForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if "date_of_birth" in self.fields:
-            self.fields["date_of_birth"].widget = forms.DateInput(attrs={"type": "date"})
         self.fields["student"].queryset = Student.objects.select_related("prospect__contact").order_by(
             "prospect__contact__first_name",
             "prospect__contact__last_name",
@@ -1265,16 +1303,7 @@ class StudentCreateForm(forms.ModelForm):
         else:
             raise forms.ValidationError("Select a valid person type.")
 
-        for field in (
-            "teacher",
-            "date_of_birth",
-            "address",
-            "city",
-            "province_state",
-            "country",
-            "enrollment_status",
-            "notes",
-        ):
+        for field in ("teacher", "enrollment_status", "notes"):
             setattr(student, field, self.cleaned_data.get(field))
 
         if not student.owner_id:
@@ -1282,4 +1311,19 @@ class StudentCreateForm(forms.ModelForm):
 
         if commit:
             student.save()
+            contact = student.contact
+            for field in ("date_of_birth", "address", "city", "province_state", "country"):
+                value = self.cleaned_data.get(field)
+                setattr(contact, field, (value or None) if field == "date_of_birth" else (value or ""))
+            contact.full_clean()
+            contact.save(
+                update_fields=[
+                    "date_of_birth",
+                    "address",
+                    "city",
+                    "province_state",
+                    "country",
+                    "updated_at",
+                ]
+            )
         return student

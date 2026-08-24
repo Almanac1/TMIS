@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
 from django.db.models import Q, Sum, Value
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, Lower
 from django.utils.text import slugify
 from django.utils import timezone
 
@@ -342,6 +342,41 @@ class Prospect(TimeStampedModel):
                     return candidate
         return None
 
+    def _mark_converted(self, student) -> None:
+        if (
+            self.status == ProspectStatus.CONVERTED
+            and self.converted_to_student
+            and self.converted_student_id == student.pk
+            and self.converted_at is not None
+        ):
+            return
+        self.status = ProspectStatus.CONVERTED
+        self.converted_to_student = True
+        self.converted_student = student
+        self.converted_at = timezone.now()
+        self.save(
+            update_fields=[
+                "status",
+                "converted_to_student",
+                "converted_student",
+                "converted_at",
+                "updated_at",
+            ]
+        )
+
+    def _validate_contact_student_uniqueness(self, contact) -> None:
+        existing_for_contact = (
+            Student.objects.select_related("prospect__contact")
+            .filter(prospect__contact=contact)
+            .exclude(prospect=self)
+            .first()
+        )
+        if existing_for_contact:
+            raise ValidationError(
+                f"Contact #{contact.pk} is already linked to Student "
+                f"#{existing_for_contact.pk}."
+            )
+
     def convert_to_student(self):
         """
         Idempotently convert this prospect into a student record.
@@ -349,6 +384,9 @@ class Prospect(TimeStampedModel):
         Returns:
             tuple[Student, bool]: (student_instance, created_flag)
         """
+        if not self.contact_id:
+            raise ValidationError("Cannot convert a prospect without a Contact.")
+        contact = self.contact
         existing_student = getattr(self, "student_record", None) or self.converted_student
         if (
             existing_student is not None
@@ -367,6 +405,10 @@ class Prospect(TimeStampedModel):
         # actions, is subject to the financial requirement.
         validate_prospect_conversion_financial_eligibility(self)
 
+        # The Contact is never created or copied during conversion. The required
+        # Contact -> Prospect -> Student one-to-one chain is the identity link.
+        self._validate_contact_student_uniqueness(contact)
+
         duplicate_student = self.find_potential_duplicate_student()
         if duplicate_student:
             raise ValidationError(
@@ -378,6 +420,7 @@ class Prospect(TimeStampedModel):
             )
         try:
             with transaction.atomic():
+                Prospect.objects.select_for_update().only("pk").get(pk=self.pk)
                 student, created = Student.objects.get_or_create(
                     prospect=self,
                     defaults={
@@ -386,25 +429,7 @@ class Prospect(TimeStampedModel):
                         "notes": self.notes,
                     },
                 )
-                if (
-                    self.status != ProspectStatus.CONVERTED
-                    or not self.converted_to_student
-                    or self.converted_student_id != student.pk
-                    or self.converted_at is None
-                ):
-                    self.status = ProspectStatus.CONVERTED
-                    self.converted_to_student = True
-                    self.converted_student = student
-                    self.converted_at = timezone.now()
-                    self.save(
-                        update_fields=[
-                            "status",
-                            "converted_to_student",
-                            "converted_student",
-                            "converted_at",
-                            "updated_at",
-                        ]
-                    )
+                self._mark_converted(student)
                 if student.enrollment_status == EnrollmentStatus.INACTIVE:
                     student.enrollment_status = EnrollmentStatus.PENDING
                     student.save(update_fields=["enrollment_status", "updated_at"])
@@ -412,40 +437,17 @@ class Prospect(TimeStampedModel):
         except IntegrityError:
             # Handles rare race conditions where another process creates the row
             # concurrently between get and create.
-            student = Student.objects.filter(prospect=self).first()
-            if student is None:
-                with transaction.atomic():
-                    student, _ = Student.objects.get_or_create(
-                        prospect=self,
-                        defaults={
-                            "owner": self.owner,
-                            "teacher": self.teacher,
-                            "notes": self.notes,
-                        },
-                    )
-            if (
-                self.status != ProspectStatus.CONVERTED
-                or not self.converted_to_student
-                or self.converted_student_id != student.pk
-                or self.converted_at is None
-            ):
-                self.status = ProspectStatus.CONVERTED
-                self.converted_to_student = True
-                self.converted_student = student
-                self.converted_at = timezone.now()
-                self.save(
-                    update_fields=[
-                        "status",
-                        "converted_to_student",
-                        "converted_student",
-                        "converted_at",
-                        "updated_at",
-                    ]
-                )
-            if student.enrollment_status == EnrollmentStatus.INACTIVE:
-                student.enrollment_status = EnrollmentStatus.PENDING
-                student.save(update_fields=["enrollment_status", "updated_at"])
-            return student, False
+            with transaction.atomic():
+                Prospect.objects.select_for_update().only("pk").get(pk=self.pk)
+                student = Student.objects.filter(prospect=self).first()
+                if student is None:
+                    raise
+                self._validate_contact_student_uniqueness(contact)
+                self._mark_converted(student)
+                if student.enrollment_status == EnrollmentStatus.INACTIVE:
+                    student.enrollment_status = EnrollmentStatus.PENDING
+                    student.save(update_fields=["enrollment_status", "updated_at"])
+                return student, False
 
     def clean(self) -> None:
         if not self.contact_id:
@@ -463,12 +465,24 @@ class Contact(TimeStampedModel):
     last_name = models.CharField(max_length=100)
     email = models.EmailField(blank=True, null=True)
     phone_number = models.CharField(max_length=30, blank=True, null=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    address = models.TextField(blank=True)
+    city = models.CharField(max_length=100, blank=True)
+    province_state = models.CharField(max_length=100, blank=True)
+    country = models.CharField(max_length=100, blank=True)
 
     class Meta:
         ordering = ["first_name", "last_name"]
         indexes = [
             models.Index(fields=["email"]),
             models.Index(fields=["phone_number"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                Lower("email"),
+                condition=Q(email__isnull=False) & ~Q(email=""),
+                name="unique_contact_email_ci_nonempty",
+            )
         ]
 
     def __str__(self) -> str:
@@ -512,6 +526,14 @@ class Contact(TimeStampedModel):
         return re.sub(r"\D+", "", phone or "")
 
     @classmethod
+    def _phone_identity_variants(cls, phone: str) -> set[str]:
+        normalized = cls._normalize_phone(phone)
+        variants = {normalized} if normalized else set()
+        if len(normalized) == 11 and normalized.startswith("1"):
+            variants.add(normalized[1:])
+        return variants
+
+    @classmethod
     def find_matching_contact(
         cls,
         *,
@@ -521,19 +543,25 @@ class Contact(TimeStampedModel):
         last_name: str = "",
     ):
         email_value = (email or "").strip()
-        phone_digits = cls._normalize_phone(phone_number)
-        candidates = cls.objects.all()
-        if first_name:
-            candidates = candidates.filter(first_name__iexact=first_name.strip())
-        if last_name:
-            candidates = candidates.filter(last_name__iexact=last_name.strip())
+        phone_variants = cls._phone_identity_variants(phone_number)
         if email_value:
-            match = candidates.filter(email__iexact=email_value).first()
+            # Email is the existing stable identity signal and is therefore not
+            # restricted by a possibly stale or changed name.
+            match = cls.objects.filter(email__iexact=email_value).first()
             if match:
                 return match
-        if phone_digits:
+        if phone_variants:
+            # Phone numbers may be shared by a household. Require the same
+            # person name before treating a normalized phone as a duplicate.
+            candidates = cls.objects.all()
+            if first_name:
+                candidates = candidates.filter(first_name__iexact=first_name.strip())
+            if last_name:
+                candidates = candidates.filter(last_name__iexact=last_name.strip())
             for contact in candidates.exclude(phone_number__isnull=True).exclude(phone_number=""):
-                if cls._normalize_phone(contact.phone_number) == phone_digits:
+                if phone_variants.intersection(
+                    cls._phone_identity_variants(contact.phone_number)
+                ):
                     return contact
         return None
 
@@ -546,52 +574,87 @@ class Contact(TimeStampedModel):
         email: str = "",
         phone_number: str = "",
     ):
-        match = cls.find_matching_contact(
-            email=email,
-            phone_number=phone_number,
-            first_name=first_name,
-            last_name=last_name,
-        )
-        if match:
-            updated_fields = []
-            if first_name and not match.first_name:
-                match.first_name = first_name
-                updated_fields.append("first_name")
-            if last_name and not match.last_name:
-                match.last_name = last_name
-                updated_fields.append("last_name")
-            if email and not match.email:
-                match.email = email
-                updated_fields.append("email")
-            if phone_number and not match.phone_number:
-                match.phone_number = phone_number
-                updated_fields.append("phone_number")
-            if updated_fields:
-                match.save(update_fields=updated_fields + ["updated_at"])
-            return match, False
-        return cls.objects.create(
-            first_name=first_name,
-            last_name=last_name,
-            email=email or None,
-            phone_number=phone_number or None,
-        ), True
+        def find_match():
+            return cls.find_matching_contact(
+                email=email,
+                phone_number=phone_number,
+                first_name=first_name,
+                last_name=last_name,
+            )
+
+        try:
+            with transaction.atomic():
+                match = find_match()
+                if match:
+                    updated_fields = []
+                    if first_name and not match.first_name:
+                        match.first_name = first_name
+                        updated_fields.append("first_name")
+                    if last_name and not match.last_name:
+                        match.last_name = last_name
+                        updated_fields.append("last_name")
+                    if email and not match.email:
+                        match.email = email
+                        updated_fields.append("email")
+                    if phone_number and not match.phone_number:
+                        match.phone_number = phone_number
+                        updated_fields.append("phone_number")
+                    if updated_fields:
+                        match.save(update_fields=updated_fields + ["updated_at"])
+                    return match, False
+                return cls.objects.create(
+                    first_name=first_name,
+                    last_name=last_name,
+                    email=email or None,
+                    phone_number=phone_number or None,
+                ), True
+        except IntegrityError:
+            # A concurrent email-based create may win the race. Resolve to the
+            # canonical row rather than creating another identity.
+            match = find_match()
+            if match:
+                return match, False
+            raise
 
     def clean(self) -> None:
+        self.first_name = (self.first_name or "").strip()
+        self.last_name = (self.last_name or "").strip()
+        self.email = (self.email or "").strip().lower() or None
+        self.phone_number = (self.phone_number or "").strip() or None
         if not self.first_name:
             raise ValidationError("Contact first_name is required.")
         if not self.last_name:
             raise ValidationError("Contact last_name is required.")
-        if self.email == "":
-            self.email = None
-        if self.phone_number == "":
-            self.phone_number = None
-
         if self.email:
             duplicate_email = Contact.objects.filter(email__iexact=self.email).exclude(
                 pk=self.pk
             )
             if duplicate_email.exists():
                 raise ValidationError({"email": "A contact with this email already exists."})
+
+        if self.phone_number:
+            phone_variants = self._phone_identity_variants(self.phone_number)
+            same_name_candidates = Contact.objects.filter(
+                first_name__iexact=self.first_name,
+                last_name__iexact=self.last_name,
+            ).exclude(pk=self.pk)
+            for candidate in same_name_candidates.exclude(phone_number__isnull=True).exclude(
+                phone_number=""
+            ):
+                if phone_variants.intersection(
+                    self._phone_identity_variants(candidate.phone_number)
+                ):
+                    raise ValidationError(
+                        {
+                            "phone_number": (
+                                "A contact with this name and phone number already exists."
+                            )
+                        }
+                    )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 class Teacher(TimeStampedModel):
     user = models.OneToOneField(
@@ -705,11 +768,6 @@ class Student(TimeStampedModel):
         blank=True,
         related_name="students",
     )
-    date_of_birth = models.DateField(null=True, blank=True)
-    address = models.TextField(blank=True)
-    city = models.CharField(max_length=100, blank=True)
-    province_state = models.CharField(max_length=100, blank=True)
-    country = models.CharField(max_length=100, blank=True)
     enrollment_status = models.CharField(
         max_length=20,
         choices=EnrollmentStatus.choices,
@@ -743,6 +801,31 @@ class Student(TimeStampedModel):
             if self.prospect_id and self.prospect.contact_id
             else ""
         )
+
+    @property
+    def contact(self):
+        """Canonical person identity reached through the preserved Prospect."""
+        return self.prospect.contact if self.prospect_id and self.prospect.contact_id else None
+
+    @property
+    def date_of_birth(self):
+        return self.contact.date_of_birth if self.contact else None
+
+    @property
+    def address(self) -> str:
+        return self.contact.address if self.contact else ""
+
+    @property
+    def city(self) -> str:
+        return self.contact.city if self.contact else ""
+
+    @property
+    def province_state(self) -> str:
+        return self.contact.province_state if self.contact else ""
+
+    @property
+    def country(self) -> str:
+        return self.contact.country if self.contact else ""
 
     def __str__(self) -> str:
         teacher_name = self.teacher if self.teacher_id else "Unassigned"
@@ -1104,7 +1187,7 @@ class Disbursement(TimeStampedModel):
         decimal_places=2,
         validators=[MinValueValidator(Decimal("0.00"))],
     )
-    location_amount = models.DecimalField(
+    national_office_amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal("0.00"))],
@@ -1113,6 +1196,12 @@ class Disbursement(TimeStampedModel):
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal("0.00"))],
+    )
+    marketing_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        default=Decimal("0.00"),
     )
     disbursement_date = models.DateField()
     status = models.CharField(
@@ -1140,11 +1229,14 @@ class Disbursement(TimeStampedModel):
             if self.location_id and self.location_id != expected_location.id:
                 raise ValidationError("location must match enrollment.session.location.")
         total = (self.teacher_amount or Decimal("0.00")) + (
-            self.location_amount or Decimal("0.00")
-        ) + (self.ico_amount or Decimal("0.00"))
+            self.national_office_amount or Decimal("0.00")
+        ) + (self.ico_amount or Decimal("0.00")) + (
+            self.marketing_amount or Decimal("0.00")
+        )
         if self.balance_due_snapshot is not None and total != self.balance_due_snapshot:
             raise ValidationError(
-                "teacher_amount + location_amount + ico_amount must equal balance_due_snapshot."
+                "teacher_amount + national_office_amount + ico_amount + "
+                "marketing_amount must equal balance_due_snapshot."
             )
 
     def save(self, *args, **kwargs):
@@ -1153,13 +1245,13 @@ class Disbursement(TimeStampedModel):
             self.teacher = self.enrollment.session.teacher
             self.location = self.enrollment.session.location
             self.balance_due_snapshot = self.enrollment.balance_due or Decimal("0.00")
-        base = self.balance_due_snapshot or Decimal("0.00")
-        teacher_amount = (base * Decimal("0.50")).quantize(Decimal("0.01"))
-        location_amount = (base * Decimal("0.20")).quantize(Decimal("0.01"))
-        ico_amount = (base - teacher_amount - location_amount).quantize(Decimal("0.01"))
-        self.teacher_amount = teacher_amount
-        self.location_amount = location_amount
-        self.ico_amount = ico_amount
+        from core.services.revenue_allocation import allocate_revenue
+
+        allocation = allocate_revenue(self.balance_due_snapshot or Decimal("0.00"))
+        self.teacher_amount = allocation.governor
+        self.national_office_amount = allocation.national_office
+        self.ico_amount = allocation.ico
+        self.marketing_amount = allocation.marketing
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
@@ -1400,6 +1492,10 @@ class Meditator(TimeStampedModel):
     def public_id(self) -> str:
         # Stable short display ID for list views in schemas that still use integer PKs.
         return f"MED-{self.pk}"
+
+    @property
+    def contact(self):
+        return self.student.contact if self.student_id else None
 
 
 class MeditatorTransitionEvent(TimeStampedModel):

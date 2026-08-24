@@ -672,7 +672,13 @@ class StudentAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "prospect__contact__email",
         "prospect__contact__phone_number",
     )
-    list_filter = ("enrollment_status", "teacher", "province_state", "country", "created_at")
+    list_filter = (
+        "enrollment_status",
+        "teacher",
+        "prospect__contact__province_state",
+        "prospect__contact__country",
+        "created_at",
+    )
     ordering = ("prospect__contact__first_name", "prospect__contact__last_name")
     list_select_related = ("prospect", "teacher")
     readonly_fields = ("created_at", "updated_at")
@@ -1054,8 +1060,9 @@ class DisbursementAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "location",
         "session_display",
         "teacher_amount",
-        "location_amount",
+        "national_office_amount",
         "ico_amount",
+        "marketing_amount",
         "balance_due_snapshot",
     )
     search_fields = (
@@ -1094,8 +1101,9 @@ class DisbursementAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     readonly_fields = (
         "balance_due_snapshot",
         "teacher_amount",
-        "location_amount",
+        "national_office_amount",
         "ico_amount",
+        "marketing_amount",
         "created_at",
         "updated_at",
     )
@@ -1269,6 +1277,8 @@ class ContactAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "last_name",
         "email",
         "phone_number",
+        "city",
+        "country",
         "created_at",
     )
     list_filter = ("created_at",)
@@ -1277,6 +1287,9 @@ class ContactAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "last_name",
         "email",
         "phone_number",
+        "city",
+        "province_state",
+        "country",
     )
     readonly_fields = ("created_at", "updated_at")
     date_hierarchy = "created_at"

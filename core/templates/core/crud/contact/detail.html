@@ -68,6 +68,11 @@
           <div><dt>Last Name</dt><dd>{{ object.last_name|default:"-" }}</dd></div>
           <div><dt>Email Address</dt><dd>{{ object.email|default:"-" }}</dd></div>
           <div><dt>Phone Number</dt><dd>{{ object.phone_number|default:"-" }}</dd></div>
+          <div><dt>Date of Birth</dt><dd>{{ object.date_of_birth|date:"M d, Y"|default:"-" }}</dd></div>
+          <div><dt>Address</dt><dd>{{ object.address|default:"-" }}</dd></div>
+          <div><dt>City</dt><dd>{{ object.city|default:"-" }}</dd></div>
+          <div><dt>Province / State</dt><dd>{{ object.province_state|default:"-" }}</dd></div>
+          <div><dt>Country</dt><dd>{{ object.country|default:"-" }}</dd></div>
         </dl>
       </section>
     </main>
