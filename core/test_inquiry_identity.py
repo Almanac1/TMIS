@@ -1,10 +1,12 @@
 import uuid
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
 from django.db.models.deletion import ProtectedError
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 
@@ -60,6 +62,17 @@ class InquiryIdentityWorkflowTests(TestCase):
         self.assertEqual(second.contact, self.contact)
         self.assertEqual(self.contact.inquiries.count(), 2)
         self.assertIs(Inquiry._meta.pk, Inquiry._meta.get_field("uuid"))
+
+    def test_one_contact_with_one_inquiry_retains_canonical_identity(self):
+        inquiry = Inquiry.objects.create(
+            contact=self.contact,
+            inquiry_date=timezone.now(),
+            subject="Single inquiry",
+            message="One event for one person",
+        )
+
+        self.assertEqual(self.contact.inquiries.get(), inquiry)
+        self.assertEqual(inquiry.contact, self.contact)
 
     def test_inquiry_numbers_are_unique_sequential_and_separate_from_uuid(self):
         first = self._create_inquiry("Numbered first")
@@ -387,6 +400,73 @@ class InquiryIdentityWorkflowTests(TestCase):
         self.assertEqual(Contact.objects.count(), before_contacts)
         self.assertEqual(inquiry.contact, self.contact)
 
+    def test_selecting_existing_contact_for_another_inquiry_does_not_create_contact(self):
+        before_contacts = Contact.objects.count()
+        first = self._create_inquiry("Existing person first")
+        second = Inquiry.objects.create(
+            contact=self.contact,
+            inquiry_date=timezone.now(),
+            subject="Existing person second",
+            message="Another event",
+        )
+
+        self.assertEqual(Contact.objects.count(), before_contacts)
+        self.assertEqual(first.contact, second.contact)
+        self.assertNotEqual(first.uuid, second.uuid)
+        self.assertNotEqual(first.inquiry_number, second.inquiry_number)
+
+    def test_contact_to_prospect_conversion_preserves_previous_inquiries(self):
+        contact = Contact.objects.create(
+            first_name="Prospect",
+            last_name="Journey",
+            email="prospect.journey@example.com",
+        )
+        inquiry = Inquiry.objects.create(
+            contact=contact,
+            inquiry_date=timezone.now(),
+            subject="Before prospect",
+            message="Initial question",
+        )
+        original_uuid = inquiry.uuid
+
+        prospect, created = contact.convert_to_prospect(owner=self.user)
+        inquiry.refresh_from_db()
+
+        self.assertTrue(created)
+        self.assertEqual(prospect.contact, contact)
+        self.assertEqual(inquiry.contact, contact)
+        self.assertEqual(inquiry.uuid, original_uuid)
+        self.assertTrue(Inquiry.objects.filter(pk=inquiry.pk).exists())
+
+    def test_contact_to_student_conversion_preserves_previous_inquiries(self):
+        contact = Contact.objects.create(
+            first_name="Student",
+            last_name="Journey",
+            email="student.journey@example.com",
+        )
+        prospect, _ = contact.convert_to_prospect(owner=self.user)
+        inquiry = Inquiry.objects.create(
+            contact=contact,
+            prospect=prospect,
+            inquiry_date=timezone.now(),
+            subject="Before student",
+            message="Course question",
+        )
+        original_uuid = inquiry.uuid
+
+        with patch(
+            "core.services.prospect_conversion.validate_prospect_conversion_financial_eligibility"
+        ):
+            student, created = prospect.convert_to_student()
+        inquiry.refresh_from_db()
+
+        self.assertTrue(created)
+        self.assertEqual(student.contact, contact)
+        self.assertEqual(inquiry.contact, contact)
+        self.assertEqual(inquiry.prospect, prospect)
+        self.assertEqual(inquiry.uuid, original_uuid)
+        self.assertTrue(Inquiry.objects.filter(pk=inquiry.pk).exists())
+
     def test_inquiry_create_page_prefills_searchable_existing_contact(self):
         response = self.client.get(
             reverse("core:inquiry-create"),
@@ -456,7 +536,62 @@ class InquiryIdentityWorkflowTests(TestCase):
     def test_dashboard_counts_inquiry_events_not_people(self):
         self._create_inquiry("Open one")
         self._create_inquiry("Open two")
+        archived = self._create_inquiry("Archived open event")
+        archived.is_archived = True
+        archived.save(update_fields=["is_archived", "updated_at"])
 
         dashboard = get_home_dashboard_data(user=self.user)
 
         self.assertEqual(dashboard["kpis"]["open_inquiries"], 2)
+
+
+class InquiryArchivingMigrationTests(TransactionTestCase):
+    """Existing Inquiry identity and history survive the additive archive migration."""
+
+    migrate_from = [("core", "0043_communication_inquiry_relationship")]
+    migrate_to = [("core", "0044_inquiry_archiving")]
+
+    def setUp(self):
+        super().setUp()
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.migrate_from)
+        old_apps = executor.loader.project_state(self.migrate_from).apps
+        Contact = old_apps.get_model("core", "Contact")
+        OldInquiry = old_apps.get_model("core", "Inquiry")
+
+        contact = Contact.objects.create(
+            first_name="Migration",
+            last_name="Survivor",
+            email="migration.survivor@example.com",
+        )
+        self.contact_pk = contact.pk
+        self.inquiry_uuid = uuid.uuid4()
+        self.inquiry_number = "INQ-2026-9999"
+        inquiry = OldInquiry.objects.create(
+            uuid=self.inquiry_uuid,
+            legacy_int_id=999999,
+            inquiry_number=self.inquiry_number,
+            contact=contact,
+            inquiry_date=timezone.now(),
+            channel="email",
+            subject="Preserve migration record",
+            message="Historical details must survive.",
+            status="open",
+        )
+        self.created_at = inquiry.created_at
+
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.migrate_to)
+        self.apps = executor.loader.project_state(self.migrate_to).apps
+
+    def test_existing_inquiry_survives_archive_migration(self):
+        MigratedInquiry = self.apps.get_model("core", "Inquiry")
+        inquiry = MigratedInquiry.objects.get(pk=self.inquiry_uuid)
+
+        self.assertEqual(inquiry.inquiry_number, self.inquiry_number)
+        self.assertEqual(inquiry.contact_id, self.contact_pk)
+        self.assertEqual(inquiry.subject, "Preserve migration record")
+        self.assertEqual(inquiry.message, "Historical details must survive.")
+        self.assertEqual(inquiry.status, "open")
+        self.assertEqual(inquiry.created_at, self.created_at)
+        self.assertFalse(inquiry.is_archived)
