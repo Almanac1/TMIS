@@ -1241,6 +1241,7 @@ class CommunicationAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "recipient_display",
         "channel",
         "communication_type",
+        "inquiry",
         "delivery_status",
         "sent_at",
         "created_at",
@@ -1255,6 +1256,7 @@ class CommunicationAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "student__prospect__contact__first_name",
         "student__prospect__contact__last_name",
         "student__prospect__contact__email",
+        "inquiry__inquiry_number",
     )
     list_filter = (
         "recipient_type",
@@ -1265,7 +1267,7 @@ class CommunicationAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "created_at",
     )
     ordering = ("-created_at",)
-    list_select_related = ("prospect", "student", "student__prospect", "enrollment")
+    list_select_related = ("prospect", "student", "student__prospect", "enrollment", "inquiry")
     readonly_fields = ("delivery_status", "sent_at", "created_at", "updated_at")
 
     @admin.display(description="Recipient")

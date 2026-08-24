@@ -40,6 +40,7 @@
       </div>
       <form method="post" novalidate>
         {% csrf_token %}
+        {{ form.inquiry }}
         {% if recipients_payload %}
           <input type="hidden" name="recipients" value="{{ recipients_payload }}">
         {% endif %}
@@ -54,6 +55,17 @@
           <div class="col-md-4" id="prospect-field-wrap">{{ form.prospect.label_tag }} {{ form.prospect }}</div>
           <div class="col-md-4" id="student-field-wrap">{{ form.student.label_tag }} {{ form.student }}</div>
           <div class="col-12">{{ form.enrollment.label_tag }} {{ form.enrollment }}{% if form.enrollment.help_text %}<div class="form-text">{{ form.enrollment.help_text }}</div>{% endif %}</div>
+          <div class="col-12">
+            <label for="communication-inquiry-search" class="form-label">Related Inquiry <span class="text-muted fw-normal">(optional)</span></label>
+            <input id="communication-inquiry-search" type="search" class="form-control" autocomplete="off" placeholder="Search by Inquiry reference, Contact, or subject">
+            <div id="communication-inquiry-results" class="list-group mt-2"></div>
+            {% with selected_inquiry=form.fields.inquiry.queryset.first %}
+              <div id="communication-inquiry-selected" class="alert alert-light border py-2 mt-2 mb-0{% if not selected_inquiry %} d-none{% endif %}">
+                {% if selected_inquiry %}{{ selected_inquiry.inquiry_number }} · {{ selected_inquiry.contact.full_name }} · {{ selected_inquiry.subject|default:"No subject" }}{% endif %}
+              </div>
+            {% endwith %}
+            {% if form.inquiry.errors %}<div class="text-danger small">{{ form.inquiry.errors }}</div>{% endif %}
+          </div>
         </div>
 
         <h2 class="h6 text-uppercase text-muted mb-2">What</h2>
@@ -109,6 +121,12 @@
     var senderValue = "{{ recipient_sender_email|default:''|escapejs }}";
     var recipientCount = "{{ recipient_preview_count|default:'1'|escapejs }}";
     var invalidCount = "{{ recipient_invalid_tokens|length|default:'0'|escapejs }}";
+    var inquiryField = document.getElementById("id_inquiry");
+    var inquirySearch = document.getElementById("communication-inquiry-search");
+    var inquiryResults = document.getElementById("communication-inquiry-results");
+    var inquirySelected = document.getElementById("communication-inquiry-selected");
+    var inquiryEndpoint = "{% url 'core:inquiry-autocomplete' %}";
+    var inquiryTimer = null;
 
     function toggleRecipientFields() {
       if (!recipientType) return;
@@ -120,6 +138,42 @@
     if (recipientType) {
       recipientType.addEventListener("change", toggleRecipientFields);
       toggleRecipientFields();
+    }
+
+    if (inquirySearch) {
+      inquirySearch.addEventListener("input", function () {
+        window.clearTimeout(inquiryTimer);
+        inquiryTimer = window.setTimeout(async function () {
+          var query = inquirySearch.value.trim();
+          if (query.length < 2) {
+            inquiryResults.innerHTML = "";
+            return;
+          }
+          inquiryResults.innerHTML = '<div class="list-group-item text-muted">Searching…</div>';
+          var response = await fetch(inquiryEndpoint + "?" + new URLSearchParams({q: query}), {
+            headers: {"X-Requested-With": "XMLHttpRequest"}
+          });
+          var payload = await response.json();
+          inquiryResults.innerHTML = "";
+          if (!(payload.results || []).length) {
+            inquiryResults.innerHTML = '<div class="list-group-item text-muted">No matching Inquiries found.</div>';
+            return;
+          }
+          payload.results.forEach(function (item) {
+            var button = document.createElement("button");
+            button.type = "button";
+            button.className = "list-group-item list-group-item-action";
+            button.textContent = item.reference + " · " + item.contact + " · " + item.subject;
+            button.addEventListener("click", function () {
+              inquiryField.value = item.id;
+              inquirySelected.textContent = button.textContent;
+              inquirySelected.classList.remove("d-none");
+              inquiryResults.innerHTML = "";
+            });
+            inquiryResults.appendChild(button);
+          });
+        }, 250);
+      });
     }
 
     if (form) {

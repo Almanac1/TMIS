@@ -872,6 +872,7 @@ class PaymentForm(forms.ModelForm):
 class CommunicationForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.allow_recipient_override = kwargs.pop("allow_recipient_override", False)
+        self.request_user = kwargs.pop("request_user", None)
         super().__init__(*args, **kwargs)
         for name, field in self.fields.items():
             css_class = "form-control"
@@ -886,6 +887,9 @@ class CommunicationForm(forms.ModelForm):
         self.fields["enrollment"].help_text = (
             "Optional. Link only when this communication is about a specific enrollment."
         )
+        self.fields["inquiry"].help_text = (
+            "Optional. Link only when this communication concerns a specific Inquiry."
+        )
         self.fields["provider_status"].help_text = (
             "Optional provider response (for example: delivered, failed, bounced)."
         )
@@ -898,6 +902,7 @@ class CommunicationForm(forms.ModelForm):
         self.fields["prospect"].required = False
         self.fields["student"].required = False
         self.fields["enrollment"].required = False
+        self.fields["inquiry"].required = False
         self.fields["subject"].required = True
         self.fields["body"].required = True
         self.fields["provider_status"].required = False
@@ -911,6 +916,28 @@ class CommunicationForm(forms.ModelForm):
             "prospect__contact"
         ).order_by("prospect__contact__first_name", "prospect__contact__last_name")
         self.fields["enrollment"].queryset = self.fields["enrollment"].queryset.none()
+        selected_inquiry = (
+            (self.data.get("inquiry") if self.is_bound else None)
+            or self.initial.get("inquiry")
+            or (self.instance.inquiry_id if self.instance and self.instance.pk else None)
+        )
+        if hasattr(selected_inquiry, "pk"):
+            selected_inquiry = selected_inquiry.pk
+        inquiry_queryset = Inquiry.objects.select_related("contact")
+        if self.request_user:
+            from core.services.ownership import scope_queryset_for_user
+
+            inquiry_queryset = scope_queryset_for_user(
+                queryset=inquiry_queryset,
+                model=Inquiry,
+                user=self.request_user,
+            )
+        self.fields["inquiry"].queryset = (
+            inquiry_queryset.filter(pk=selected_inquiry)
+            if selected_inquiry
+            else inquiry_queryset.none()
+        )
+        self.fields["inquiry"].widget = forms.HiddenInput()
         self.fields["channel"].initial = CommunicationChannel.EMAIL
         self.fields["owner"].required = False
         self.fields["owner"].help_text = "Auto-assigned for non-superusers."
@@ -944,6 +971,7 @@ class CommunicationForm(forms.ModelForm):
             "prospect",
             "student",
             "enrollment",
+            "inquiry",
             "channel",
             "communication_type",
             "subject",

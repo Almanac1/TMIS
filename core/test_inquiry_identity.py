@@ -8,8 +8,18 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from core.forms import InquiryForm
-from core.models import Contact, Inquiry, InquiryStatus, Prospect, Student
+from core.forms import CommunicationForm, InquiryForm
+from core.models import (
+    Communication,
+    CommunicationChannel,
+    CommunicationType,
+    Contact,
+    Inquiry,
+    InquiryStatus,
+    Prospect,
+    RecipientType,
+    Student,
+)
 from core.services.home_dashboard import get_home_dashboard_data
 
 
@@ -87,6 +97,158 @@ class InquiryIdentityWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, inquiry.inquiry_number)
         self.assertContains(response, inquiry.subject)
+
+    def test_inquiry_search_matches_full_contact_name_and_details(self):
+        self.contact.first_name = "Nathan"
+        self.contact.last_name = "Boateng"
+        self.contact.phone_number = "+233 24 555 0482"
+        self.contact.save()
+        inquiry = self._create_inquiry("TM course details")
+
+        for query in (
+            "Nathan Boateng",
+            self.contact.email,
+            "555 0482",
+            "course details",
+            InquiryStatus.OPEN,
+            inquiry.inquiry_number,
+        ):
+            response = self.client.get(reverse("core:inquiry-list"), {"q": query})
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, inquiry.inquiry_number)
+
+    def test_communication_can_link_to_matching_inquiry(self):
+        inquiry = self._create_inquiry("Communication context")
+        form = CommunicationForm(
+            request_user=self.user,
+            data={
+                "recipient_type": RecipientType.PROSPECT,
+                "prospect": self.prospect.pk,
+                "student": "",
+                "enrollment": "",
+                "inquiry": inquiry.pk,
+                "channel": CommunicationChannel.EMAIL,
+                "communication_type": CommunicationType.GENERAL,
+                "subject": "Inquiry response",
+                "body": "Here are the requested details.",
+                "provider_status": "",
+                "related_entity_type": "",
+                "related_entity_id": "",
+                "notes": "",
+                "owner": self.user.pk,
+            },
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        communication = form.save()
+        self.assertEqual(communication.inquiry, inquiry)
+        self.assertEqual(inquiry.communications.get(), communication)
+
+    def test_communication_create_prefills_inquiry_context(self):
+        inquiry = self._create_inquiry("Prefilled communication")
+
+        response = self.client.get(
+            reverse("core:communication-create"),
+            {"inquiry": inquiry.pk},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["form"].initial["inquiry"], inquiry)
+        self.assertEqual(
+            response.context["form"].initial["recipient_type"],
+            RecipientType.STUDENT,
+        )
+        self.assertContains(response, inquiry.inquiry_number)
+
+    def test_sending_response_from_inquiry_preserves_relationship(self):
+        inquiry = self._create_inquiry("Send linked response")
+
+        response = self.client.post(
+            reverse("core:communication-create") + f"?inquiry={inquiry.pk}",
+            data={
+                "recipient_type": RecipientType.STUDENT,
+                "prospect": "",
+                "student": self.student.pk,
+                "enrollment": "",
+                "inquiry": inquiry.pk,
+                "channel": CommunicationChannel.EMAIL,
+                "communication_type": CommunicationType.GENERAL,
+                "subject": "Linked response",
+                "body": "Response to the selected inquiry.",
+                "provider_status": "",
+                "related_entity_type": "",
+                "related_entity_id": "",
+                "notes": "",
+                "owner": self.user.pk,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        communication = Communication.objects.get(subject="Linked response")
+        self.assertEqual(communication.inquiry, inquiry)
+
+    def test_inquiry_autocomplete_searches_reference_and_contact_name(self):
+        self.contact.first_name = "Nathan"
+        self.contact.last_name = "Boateng"
+        self.contact.save()
+        inquiry = self._create_inquiry("Autocomplete result")
+
+        for query in (inquiry.inquiry_number, "Nathan Boateng"):
+            response = self.client.get(
+                reverse("core:inquiry-autocomplete"),
+                {"q": query},
+            )
+            self.assertEqual(response.status_code, 200)
+            result_ids = {item["id"] for item in response.json()["results"]}
+            self.assertIn(str(inquiry.pk), result_ids)
+
+    def test_communication_rejects_inquiry_for_different_contact(self):
+        inquiry = self._create_inquiry("Wrong recipient guard")
+        other_contact = Contact.objects.create(
+            first_name="Other",
+            last_name="Recipient",
+            email="other.recipient@example.com",
+        )
+        other_prospect = Prospect.objects.create(contact=other_contact, owner=self.user)
+        form = CommunicationForm(
+            request_user=self.user,
+            data={
+                "recipient_type": RecipientType.PROSPECT,
+                "prospect": other_prospect.pk,
+                "student": "",
+                "enrollment": "",
+                "inquiry": inquiry.pk,
+                "channel": CommunicationChannel.EMAIL,
+                "communication_type": CommunicationType.GENERAL,
+                "subject": "Mismatch",
+                "body": "Must not link.",
+                "provider_status": "",
+                "related_entity_type": "",
+                "related_entity_id": "",
+                "notes": "",
+                "owner": self.user.pk,
+            },
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("inquiry", form.errors)
+
+    def test_deleting_inquiry_preserves_linked_communication(self):
+        inquiry = self._create_inquiry("Historical communication")
+        communication = Communication.objects.create(
+            owner=self.user,
+            recipient_type=RecipientType.PROSPECT,
+            prospect=self.prospect,
+            inquiry=inquiry,
+            channel=CommunicationChannel.EMAIL,
+            communication_type=CommunicationType.GENERAL,
+            subject="Historical response",
+            body="Preserve this message.",
+        )
+
+        inquiry.delete()
+        communication.refresh_from_db()
+        self.assertIsNone(communication.inquiry)
 
     def test_explicit_uuid_is_stable_and_is_database_primary_key(self):
         stable_uuid = uuid.uuid4()

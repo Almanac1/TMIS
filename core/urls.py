@@ -105,6 +105,11 @@ urlpatterns = [
         name="contact-autocomplete",
     ),
     path(
+        "inquiries/autocomplete/",
+        views.InquiryAutocompleteView.as_view(),
+        name="inquiry-autocomplete",
+    ),
+    path(
         "communications/bulk-send/",
         views.bulk_message_send_view,
         name="communication-bulk-send",

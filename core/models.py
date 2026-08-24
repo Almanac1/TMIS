@@ -1639,6 +1639,13 @@ class Communication(TimeStampedModel):
         blank=True,
         related_name="communications",
     )
+    inquiry = models.ForeignKey(
+        Inquiry,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="communications",
+    )
     channel = models.CharField(
         max_length=10,
         choices=CommunicationChannel.choices,
@@ -1670,6 +1677,7 @@ class Communication(TimeStampedModel):
             models.Index(fields=["delivery_status"]),
             models.Index(fields=["prospect"]),
             models.Index(fields=["student"]),
+            models.Index(fields=["inquiry"]),
         ]
         constraints = [
             models.CheckConstraint(
@@ -1703,6 +1711,16 @@ class Communication(TimeStampedModel):
             if not self.student or self.prospect:
                 raise ValidationError(
                     "For recipient_type='student', set student only."
+                )
+        if self.inquiry_id:
+            recipient_contact_id = None
+            if self.student_id:
+                recipient_contact_id = self.student.contact.pk
+            elif self.prospect_id:
+                recipient_contact_id = self.prospect.contact_id
+            if recipient_contact_id and self.inquiry.contact_id != recipient_contact_id:
+                raise ValidationError(
+                    {"inquiry": "Inquiry must belong to the communication recipient's Contact."}
                 )
 
     def __str__(self) -> str:

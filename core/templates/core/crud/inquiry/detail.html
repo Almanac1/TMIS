@@ -11,6 +11,7 @@
     <p class="text-muted mb-0">{{ object.public_id }} · {{ object.inquiry_date|date:"M d, Y H:i" }}</p>
   </div>
   <div class="d-flex gap-2">
+    {% if object.student or object.prospect %}<a class="btn btn-outline-primary" href="{% url 'core:communication-create' %}?inquiry={{ object.pk }}">Send Communication</a>{% endif %}
     <a class="btn btn-primary" href="{% url 'core:inquiry-update' object.pk %}">Edit Inquiry</a>
     <a class="btn btn-outline-secondary" href="{% url 'core:inquiry-list' %}">Back to Inquiries</a>
   </div>
@@ -41,4 +42,17 @@
     </div></section>
   </div>
 </div>
+{% if object.communications.exists %}
+<section class="card shadow-sm mt-3"><div class="card-body">
+  <h2 class="h5">Related Communications</h2>
+  <div class="list-group list-group-flush">
+    {% for communication in object.communications.all|slice:":5" %}
+      <a class="list-group-item list-group-item-action px-0" href="{% url 'core:communication-detail' communication.pk %}">
+        <strong>{{ communication.subject|default:communication.get_communication_type_display }}</strong>
+        <span class="text-muted"> · {{ communication.created_at|date:"M d, Y H:i" }} · {{ communication.get_delivery_status_display }}</span>
+      </a>
+    {% endfor %}
+  </div>
+</div></section>
+{% endif %}
 {% endblock %}

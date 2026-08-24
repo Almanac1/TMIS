@@ -957,6 +957,7 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
             "recipient_type__icontains",
             "channel__icontains",
             "communication_type__icontains",
+            "inquiry__inquiry_number__icontains",
             "delivery_status__icontains",
             "prospect__contact__first_name__icontains",
             "prospect__contact__last_name__icontains",
@@ -990,6 +991,46 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
         query = (self.request.GET.get("q") or "").strip()
         if not query:
             return queryset
+
+        if self.model is Inquiry:
+            tokens = [part for part in query.split() if part]
+            queryset = queryset.annotate(
+                search_contact_full_name=Concat(
+                    F("contact__first_name"),
+                    Value(" "),
+                    F("contact__last_name"),
+                )
+            )
+            token_lookups = [
+                "inquiry_number__icontains",
+                "search_contact_full_name__icontains",
+                "contact__first_name__icontains",
+                "contact__last_name__icontains",
+                "contact__email__icontains",
+                "contact__phone_number__icontains",
+                "status__icontains",
+                "channel__icontains",
+                "subject__icontains",
+                "message__icontains",
+            ]
+            combined = Q()
+            for token in tokens:
+                per_token = Q()
+                for lookup in token_lookups:
+                    per_token |= Q(**{lookup: token})
+                combined &= per_token
+
+            phrase_filters = Q(inquiry_number__iexact=query) | Q(
+                search_contact_full_name__icontains=query
+            )
+            normalized = query.replace("-", "").lower()
+            if len(normalized) >= 4 and all(
+                character in "0123456789abcdef" for character in normalized
+            ):
+                phrase_filters |= Q(uuid__startswith=normalized)
+            if query.isdigit():
+                phrase_filters |= Q(legacy_int_id=int(query))
+            return queryset.filter(combined | phrase_filters).distinct()
 
         if self.model is Student:
             tokens = [part for part in query.split() if part]
@@ -1043,15 +1084,8 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
         filters = Q()
         for lookup in self.SEARCH_CONFIG.get(self.model, []):
             filters |= Q(**{lookup: query})
-        if self.model is Inquiry:
-            normalized = query.replace("-", "").lower()
-            if len(normalized) >= 4 and all(ch in "0123456789abcdef" for ch in normalized):
-                filters |= Q(uuid__startswith=normalized)
         if query.isdigit():
-            if self.model is Inquiry:
-                filters |= Q(legacy_int_id=int(query))
-            else:
-                filters |= Q(pk=int(query))
+            filters |= Q(pk=int(query))
         if filters:
             return queryset.filter(filters)
         return queryset
@@ -1642,11 +1676,11 @@ class CommunicationCreateView(BaseCreateView):
                         if student.prospect_id and student.prospect.contact_id
                         else ""
                     )
-                    targets.append({"recipient_type": RecipientType.STUDENT, "prospect": None, "student": student, "email": email, "label": str(student.prospect if student.prospect_id else student)})
+                    targets.append({"recipient_type": RecipientType.STUDENT, "prospect": None, "student": student, "inquiry": obj, "email": email, "label": str(student.prospect if student.prospect_id else student)})
                 elif obj.prospect_id:
                     prospect = obj.prospect
                     email = (prospect.contact.email or "").strip() if prospect.contact_id else ""
-                    targets.append({"recipient_type": RecipientType.PROSPECT, "prospect": prospect, "student": None, "email": email, "label": str(prospect)})
+                    targets.append({"recipient_type": RecipientType.PROSPECT, "prospect": prospect, "student": None, "inquiry": obj, "email": email, "label": str(prospect)})
                 else:
                     invalid.append(f"{kind}:{identifier} (no recipient linked)")
                 continue
@@ -1659,11 +1693,11 @@ class CommunicationCreateView(BaseCreateView):
         if communication.recipient_type == "prospect" and communication.prospect_id:
             recipient_email = (communication.prospect.contact.email or "").strip()
             label = str(communication.prospect)
-            return [{"recipient_type": RecipientType.PROSPECT, "prospect": communication.prospect, "student": None, "email": recipient_email, "label": label}], []
+            return [{"recipient_type": RecipientType.PROSPECT, "prospect": communication.prospect, "student": None, "inquiry": communication.inquiry, "email": recipient_email, "label": label}], []
         if communication.recipient_type == "student" and communication.student_id:
             recipient_email = (communication.student.prospect.contact.email or "").strip()
             label = str(communication.student.prospect)
-            return [{"recipient_type": RecipientType.STUDENT, "prospect": None, "student": communication.student, "email": recipient_email, "label": label}], []
+            return [{"recipient_type": RecipientType.STUDENT, "prospect": None, "student": communication.student, "inquiry": communication.inquiry, "email": recipient_email, "label": label}], []
         return [], ["No recipient selected."]
 
     def get_initial(self):
@@ -1672,6 +1706,7 @@ class CommunicationCreateView(BaseCreateView):
         student_id = (self.request.GET.get("student") or "").strip()
         prospect_id = (self.request.GET.get("prospect") or "").strip()
         enrollment_id = (self.request.GET.get("enrollment") or "").strip()
+        inquiry_id = (self.request.GET.get("inquiry") or "").strip()
 
         if recipient_type in {"prospect", "student"}:
             initial["recipient_type"] = recipient_type
@@ -1684,11 +1719,35 @@ class CommunicationCreateView(BaseCreateView):
 
         if enrollment_id.isdigit():
             initial["enrollment"] = int(enrollment_id)
+        if inquiry_id:
+            try:
+                inquiry = _resolve_object_by_pk_or_uuid(
+                    queryset=scope_queryset_for_user(
+                        queryset=Inquiry.objects.select_related("prospect", "student"),
+                        model=Inquiry,
+                        user=self.request.user,
+                    ),
+                    model=Inquiry,
+                    identifier=inquiry_id,
+                )
+            except Http404:
+                inquiry = None
+            if inquiry:
+                initial["inquiry"] = inquiry
+                if inquiry.student_id:
+                    initial["recipient_type"] = RecipientType.STUDENT
+                    initial["student"] = inquiry.student_id
+                    initial["prospect"] = None
+                elif inquiry.prospect_id:
+                    initial["recipient_type"] = RecipientType.PROSPECT
+                    initial["prospect"] = inquiry.prospect_id
+                    initial["student"] = None
         return initial
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["allow_recipient_override"] = bool(self._parse_recipients_payload())
+        kwargs["request_user"] = self.request.user
         return kwargs
 
     def get_context_data(self, **kwargs):
@@ -1762,7 +1821,8 @@ class CommunicationCreateView(BaseCreateView):
             communication.recipient_type = target["recipient_type"]
             communication.prospect = target["prospect"]
             communication.student = target["student"]
-            communication.delivery_status = DeliveryStatus.SENDING
+            communication.inquiry = target.get("inquiry")
+            communication.delivery_status = DeliveryStatus.QUEUED
             try:
                 EmailMessage(
                     subject=communication.subject,
@@ -1801,6 +1861,11 @@ class CommunicationUpdateView(BaseUpdateView):
     model = Communication
     form_class = CommunicationForm
     fields = None
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["request_user"] = self.request.user
+        return kwargs
 
 
 class ProspectCreateView(BaseCreateView):
@@ -2315,6 +2380,51 @@ class ContactAutocompleteView(ProductLoginRequiredMixin, View):
                         "phone": contact.phone_number or "",
                     }
                     for contact in contacts
+                ]
+            }
+        )
+
+
+class InquiryAutocompleteView(ProductLoginRequiredMixin, View):
+    PAGE_SIZE = 20
+
+    def get(self, request):
+        query = (request.GET.get("q") or "").strip()
+        if len(query) < 2:
+            return JsonResponse({"results": []})
+
+        inquiries = scope_queryset_for_user(
+            queryset=Inquiry.objects.select_related("contact"),
+            model=Inquiry,
+            user=request.user,
+        ).annotate(
+            search_contact_full_name=Concat(
+                F("contact__first_name"),
+                Value(" "),
+                F("contact__last_name"),
+            )
+        )
+        combined = Q()
+        for token in [part for part in query.split() if part]:
+            combined &= (
+                Q(inquiry_number__icontains=token)
+                | Q(search_contact_full_name__icontains=token)
+                | Q(contact__email__icontains=token)
+                | Q(contact__phone_number__icontains=token)
+                | Q(subject__icontains=token)
+            )
+        inquiries = inquiries.filter(combined).order_by("-inquiry_date")[: self.PAGE_SIZE]
+
+        return JsonResponse(
+            {
+                "results": [
+                    {
+                        "id": str(inquiry.pk),
+                        "reference": inquiry.inquiry_number,
+                        "contact": inquiry.contact.full_name,
+                        "subject": inquiry.subject or "No subject",
+                    }
+                    for inquiry in inquiries
                 ]
             }
         )
