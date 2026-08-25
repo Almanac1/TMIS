@@ -48,6 +48,12 @@
     text: "#38425b",
   };
 
+  const axisLabelFont = {
+    family: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    size: 12,
+    weight: "500",
+  };
+
   // Enrollment categories use stable, muted colours keyed by course name. This
   // is intentionally separate from the semantic palette used by finance charts.
   const enrollmentPalette = [
@@ -204,7 +210,7 @@
             },
             ticks: {
               color: colors.text,
-              font: { size: 12, weight: "500" },
+              font: axisLabelFont,
               maxTicksLimit: 6,
               precision: 0,
               padding: 8,
@@ -214,14 +220,14 @@
             grid: { display: false },
             border: { display: false },
             afterFit(axis) {
-              axis.width = Math.min(196, axis.chart.width * 0.34);
+              axis.width = Math.min(230, axis.chart.width * 0.38);
             },
             ticks: {
               align: "start",
               crossAlign: "far",
               color: colors.text,
-              font: { size: 14, weight: "600" },
-              padding: 10,
+              font: { ...axisLabelFont, size: 15, weight: "600", lineHeight: 1.25 },
+              padding: 12,
             },
           },
         },
@@ -286,14 +292,14 @@
         scales: {
           x: {
             grid: { display: false },
-            ticks: { color: colors.text, font: { size: 12 }, padding: 8 },
+            ticks: { color: colors.text, font: axisLabelFont, padding: 8 },
           },
           y: {
             beginAtZero: true,
             grid: { color: colors.grid, drawBorder: false },
             ticks: {
               color: colors.text,
-              font: { size: 12 },
+              font: axisLabelFont,
               padding: 8,
               callback(value) {
                 return Number(value).toLocaleString();

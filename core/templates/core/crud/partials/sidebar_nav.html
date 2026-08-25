@@ -3,12 +3,12 @@
   <a class="crm-nav-link{% if request.path == '/' %} active{% endif %}" href="{% url 'core:home' %}">
     <i class="bi bi-grid"></i><span>Home</span>
   </a>
-  <a class="crm-nav-link{% if '/pipeline/prospects/dashboard/' in request.path %} active{% endif %}" href="{% url 'core:prospect-dashboard' %}">
-    <i class="bi bi-speedometer2"></i><span>Pipeline Dashboard</span>
-  </a>
-  <a class="crm-nav-link{% if '/pipeline/prospects/' in request.path and '/pipeline/prospects/dashboard/' not in request.path %} active{% endif %}" href="{% url 'core:prospect-pipeline-list' %}">
-    <i class="bi bi-diagram-3"></i><span>Prospect Pipeline</span>
-  </a>
+  <span class="crm-nav-link crm-nav-link--frozen" aria-disabled="true" title="Pipeline Dashboard will be enhanced in the next version">
+    <i class="bi bi-speedometer2"></i><span>Pipeline Dashboard</span><span class="crm-nav-version-badge">Next version</span>
+  </span>
+  <span class="crm-nav-link crm-nav-link--frozen" aria-disabled="true" title="Prospect Pipeline will be enhanced in the next version">
+    <i class="bi bi-diagram-3"></i><span>Prospect Pipeline</span><span class="crm-nav-version-badge">Next version</span>
+  </span>
 </div>
 
 <div class="crm-nav-section">

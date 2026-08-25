@@ -14,9 +14,11 @@
       <h1 class="dashboard-page-title">CRM Home</h1>
       <p class="dashboard-page-subtitle">Analytics, follow-ups, and day-to-day operations in one view.</p>
     </div>
-    <a href="{% url 'core:prospect-pipeline-list' %}" class="btn btn-primary dashboard-primary-action">
-      <i class="bi bi-box-arrow-up-right"></i> Open Pipeline
-    </a>
+    <span class="btn dashboard-primary-action dashboard-primary-action--frozen" aria-disabled="true" title="Open Pipeline will be enhanced in the next version">
+      <i class="bi bi-lock" aria-hidden="true"></i>
+      <span>Open Pipeline</span>
+      <span class="dashboard-version-badge">Next version</span>
+    </span>
   </header>
 
   {% include "core/crud/home/_kpis.html" %}

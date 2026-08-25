@@ -64,6 +64,34 @@
   font-weight: 700;
 }
 
+.dashboard-primary-action--frozen {
+  cursor: not-allowed;
+  color: #747d8d;
+  background: #f1f3f6;
+  border-color: #e2e5ea;
+  box-shadow: none;
+}
+
+.dashboard-primary-action--frozen:hover,
+.dashboard-primary-action--frozen:focus {
+  color: #747d8d;
+  background: #f1f3f6;
+  border-color: #e2e5ea;
+}
+
+.dashboard-version-badge {
+  margin-left: 0.15rem;
+  padding: 0.17rem 0.42rem;
+  color: #697283;
+  background: #fff;
+  border: 1px solid #dfe3e9;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 750;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .dashboard-kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

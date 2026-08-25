@@ -136,8 +136,9 @@
     }
 
     .main-nav {
+      flex: 1 1 auto;
+      min-height: 0;
       overflow-y: auto;
-      height: calc(100vh - 72px - 124px);
     }
 
     .crm-nav-section {
@@ -187,6 +188,35 @@
       color: var(--crm-primary);
     }
 
+    .crm-nav-link--frozen {
+      cursor: not-allowed;
+      color: #8a93a3;
+      background: #fafbfc;
+      border: 1px solid #f0f1f4;
+    }
+
+    .crm-nav-link--frozen:hover {
+      color: #8a93a3;
+      background: #fafbfc;
+    }
+
+    .crm-nav-link--frozen i {
+      color: #a4abb7;
+    }
+
+    .crm-nav-version-badge {
+      margin-left: auto;
+      padding: 0.14rem 0.35rem;
+      color: #777f8d;
+      background: #eef0f3;
+      border-radius: 999px;
+      font-size: 0.58rem;
+      font-weight: 700;
+      letter-spacing: 0.015em;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
     a {
       color: var(--crm-primary);
     }
@@ -217,6 +247,200 @@
     .sidebar-account {
       border-top: 1px solid var(--crm-border);
       background: #fff;
+    }
+
+    .desktop-account-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 72px;
+      padding: 0 1.5rem;
+      background: rgba(255, 255, 255, 0.96);
+      border-bottom: 1px solid var(--crm-border);
+      position: sticky;
+      top: 0;
+      z-index: 1020;
+      backdrop-filter: blur(12px);
+    }
+
+    .workspace-context {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .workspace-context-icon {
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--crm-primary);
+      background: var(--brand-primary-soft);
+      border: 1px solid var(--brand-primary-border);
+      border-radius: 10px;
+    }
+
+    .workspace-context-title,
+    .workspace-context-label {
+      display: block;
+      line-height: 1.15;
+    }
+
+    .workspace-context-title {
+      color: var(--crm-text);
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    .workspace-context-label {
+      margin-top: 0.18rem;
+      color: var(--crm-muted);
+      font-size: 0.7rem;
+      letter-spacing: 0.03em;
+    }
+
+    .account-menu-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      max-width: min(100%, 280px);
+      padding: 0.35rem 0.45rem 0.35rem 0.35rem;
+      color: var(--crm-text);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      text-align: left;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .account-menu-toggle:hover,
+    .account-menu-toggle:focus,
+    .account-menu-toggle[aria-expanded="true"] {
+      color: var(--crm-text);
+      background: var(--brand-primary-soft);
+      border-color: var(--brand-primary-border);
+    }
+
+    .account-menu-toggle.dropdown-toggle::after {
+      display: none;
+    }
+
+    .account-avatar {
+      width: 36px;
+      height: 36px;
+      flex: 0 0 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      color: #fff;
+      background: linear-gradient(145deg, #6d3978, var(--crm-primary));
+      box-shadow: 0 0 0 3px var(--brand-primary-soft);
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .account-menu-identity {
+      min-width: 0;
+      line-height: 1.2;
+    }
+
+    .account-menu-name,
+    .account-menu-role {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .account-menu-name {
+      font-size: 0.86rem;
+      font-weight: 650;
+    }
+
+    .account-menu-role {
+      margin-top: 0.15rem;
+      color: var(--crm-muted);
+      font-size: 0.7rem;
+    }
+
+    .account-menu-chevron {
+      flex: 0 0 auto;
+      margin-left: 0.1rem;
+      color: #98a0af;
+      font-size: 0.72rem;
+      transition: transform 0.15s ease;
+    }
+
+    .account-menu-toggle[aria-expanded="true"] .account-menu-chevron {
+      transform: rotate(180deg);
+    }
+
+    .account-dropdown {
+      width: 286px;
+      padding: 0.55rem;
+      border-color: var(--crm-border);
+      border-radius: 16px;
+      box-shadow: 0 20px 44px rgba(17, 24, 39, 0.14);
+    }
+
+    .account-dropdown-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      min-width: 0;
+      padding: 0.65rem 0.65rem 0.8rem;
+    }
+
+    .account-dropdown-header .account-avatar {
+      width: 42px;
+      height: 42px;
+      flex-basis: 42px;
+      font-size: 0.9rem;
+    }
+
+    .account-dropdown-details {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .account-dropdown .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.55rem 0.65rem;
+      border-radius: 9px;
+      color: var(--crm-text);
+      font-size: 0.86rem;
+    }
+
+    .account-dropdown .dropdown-item:hover,
+    .account-dropdown .dropdown-item:focus {
+      color: var(--crm-primary);
+      background: var(--brand-primary-soft);
+    }
+
+    .account-dropdown .dropdown-item i {
+      width: 1rem;
+      color: var(--crm-muted);
+      text-align: center;
+    }
+
+    .account-dropdown .dropdown-item:hover i,
+    .account-dropdown .dropdown-item:focus i {
+      color: var(--crm-primary);
+    }
+
+    .account-logout-form {
+      margin: 0;
+    }
+
+    .account-logout-form .dropdown-item {
+      width: 100%;
+      border: 0;
+      background: transparent;
     }
 
     .content-shell {
@@ -773,10 +997,11 @@
 
     @media (min-width: 992px) {
       .content-shell {
-        padding: 1.5rem;
+        padding: 0;
       }
 
       .content-card {
+        margin: 1.5rem;
         padding: 1.25rem;
       }
     }
@@ -881,21 +1106,58 @@
         {% include "core/crud/partials/sidebar_nav.html" %}
       </nav>
 
-      <div class="sidebar-account p-3 mt-auto">
-        {% if request.user.is_authenticated %}
-          <div class="small text-muted mb-1">Signed in as</div>
-          <div class="fw-semibold mb-2 text-truncate">{{ request.user.get_username }}</div>
-          <form method="post" action="{% url 'logout' %}">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-logout btn-sm w-100">Logout</button>
-          </form>
-        {% else %}
-          <a class="btn btn-outline-primary btn-sm w-100" href="{% url 'core:login' %}?next={{ request.path|urlencode }}">Login</a>
-        {% endif %}
-      </div>
     </aside>
 
     <main class="content-shell">
+      <div class="desktop-account-bar d-none d-lg-flex">
+        <div class="workspace-context" aria-label="Current workspace">
+          <span class="workspace-context-icon" aria-hidden="true"><i class="bi bi-grid-1x2"></i></span>
+          <span>
+            <span class="workspace-context-title">Workspace</span>
+            <span class="workspace-context-label">TMIS CRM</span>
+          </span>
+        </div>
+        {% if request.user.is_authenticated %}
+          <div class="dropdown">
+            <button class="account-menu-toggle dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Open account menu for {{ request.user.get_username }}">
+              <span class="account-avatar" aria-hidden="true">{{ request.user.get_username|first }}</span>
+              <span class="account-menu-identity">
+                <span class="account-menu-name">{{ request.user.get_full_name|default:request.user.get_username }}</span>
+                <span class="account-menu-role">
+                  {% if request.user.is_superuser %}Administrator{% elif request.user.is_staff %}Staff account{% else %}Account{% endif %}
+                </span>
+              </span>
+              <i class="bi bi-chevron-down account-menu-chevron" aria-hidden="true"></i>
+            </button>
+            <div class="dropdown-menu dropdown-menu-end account-dropdown">
+              <div class="account-dropdown-header">
+                <span class="account-avatar" aria-hidden="true">{{ request.user.get_username|first }}</span>
+                <div class="account-dropdown-details">
+                  <div class="fw-semibold text-truncate">{{ request.user.get_full_name|default:request.user.get_username }}</div>
+                  {% if request.user.email %}<div class="small text-muted text-truncate">{{ request.user.email }}</div>{% endif %}
+                </div>
+              </div>
+              {% if request.user.is_staff %}
+                <div class="dropdown-divider"></div>
+                <a class="dropdown-item" href="/admin/">
+                  <i class="bi bi-shield-lock" aria-hidden="true"></i>
+                  Admin panel
+                </a>
+              {% endif %}
+              <div class="dropdown-divider"></div>
+              <form class="account-logout-form" method="post" action="{% url 'logout' %}">
+                {% csrf_token %}
+                <button type="submit" class="dropdown-item">
+                  <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                  Sign out
+                </button>
+              </form>
+            </div>
+          </div>
+        {% else %}
+          <a class="btn btn-outline-primary btn-sm" href="{% url 'core:login' %}?next={{ request.path|urlencode }}">Login</a>
+        {% endif %}
+      </div>
       <div class="content-card">
         {% if list_url_name %}
           <nav aria-label="breadcrumb" class="mb-3">
