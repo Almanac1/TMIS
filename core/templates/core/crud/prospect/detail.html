@@ -26,22 +26,22 @@
     </div>
     <div class="prospect-action-group" aria-label="Prospect actions">
       {% if is_converted and has_student_record %}
-        <a class="btn prospect-btn prospect-btn-primary" href="{% url 'core:student-detail' object.student_record.pk %}">Open Student</a>
+        <a class="btn btn-primary" href="{% url 'core:student-detail' object.student_record.pk %}">Open Student</a>
       {% elif conversion_eligibility.eligible %}
         <form method="post" action="{% url 'core:prospect-convert-to-student' object.pk %}" class="m-0">
           {% csrf_token %}
-          <button type="submit" class="btn prospect-btn prospect-btn-primary">Convert to Student</button>
+          <button type="submit" class="btn btn-primary">Convert to Student</button>
         </form>
       {% else %}
         <span class="d-inline-block" tabindex="0" title="{{ conversion_eligibility.message }}">
-          <button type="button" class="btn prospect-btn prospect-btn-neutral" disabled aria-disabled="true">Invoice/payment required</button>
+          <button type="button" class="btn btn-outline-secondary" disabled aria-disabled="true">Invoice/payment required</button>
         </span>
       {% endif %}
-      <a class="btn prospect-btn prospect-btn-secondary" href="{% url 'core:contact-update' object.contact.pk %}">Edit Contact Identity</a>
-      <a class="btn prospect-btn prospect-btn-secondary" href="{% url update_url_name object.pk %}">Edit Prospect</a>
-      <a class="btn prospect-btn prospect-btn-neutral" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
+      <a class="btn btn-outline-primary" href="{% url 'core:contact-update' object.contact.pk %}">Edit Contact Identity</a>
+      <a class="btn btn-secondary" href="{% url update_url_name object.pk %}">Edit Prospect</a>
+      <a class="btn btn-outline-secondary" href="{% url list_url_name %}">Back to {{ model_name_plural }}</a>
       {% if can_delete %}
-        <a class="btn prospect-btn prospect-btn-danger" href="{% url delete_url_name object.pk %}">Delete</a>
+        <a class="btn btn-danger" href="{% url delete_url_name object.pk %}">Delete</a>
       {% endif %}
     </div>
   </header>
@@ -120,20 +120,20 @@
       <section class="prospect-card">
         <h2 class="prospect-card-title">Next Actions</h2>
         <div class="d-grid gap-2">
-          <a class="btn prospect-btn prospect-btn-secondary" href="{% url update_url_name object.pk %}">Update Prospect Details</a>
+          <a class="btn btn-outline-primary" href="{% url update_url_name object.pk %}">Update Prospect Details</a>
           {% if is_converted and has_student_record %}
-            <a class="btn prospect-btn prospect-btn-primary" href="{% url 'core:student-detail' object.student_record.pk %}">Open Student Record</a>
+            <a class="btn btn-primary" href="{% url 'core:student-detail' object.student_record.pk %}">Open Student Record</a>
           {% elif conversion_eligibility.eligible %}
             <form method="post" action="{% url 'core:prospect-convert-to-student' object.pk %}" class="m-0">
               {% csrf_token %}
-              <button type="submit" class="btn prospect-btn prospect-btn-primary w-100">Convert to Student</button>
+              <button type="submit" class="btn btn-primary w-100">Convert to Student</button>
             </form>
           {% else %}
             <span class="d-inline-block" tabindex="0" title="{{ conversion_eligibility.message }}">
-              <button type="button" class="btn prospect-btn prospect-btn-neutral w-100" disabled aria-disabled="true">Invoice/payment required</button>
+              <button type="button" class="btn btn-outline-secondary w-100" disabled aria-disabled="true">Invoice/payment required</button>
             </span>
           {% endif %}
-          <a class="btn prospect-btn prospect-btn-neutral" href="{% url 'core:communication-create' %}?recipient_type=prospect&prospect={{ object.pk }}">Log Follow-up Communication</a>
+          <a class="btn btn-outline-primary" href="{% url 'core:communication-create' %}?recipient_type=prospect&prospect={{ object.pk }}">Log Follow-up Communication</a>
         </div>
       </section>
 
@@ -210,28 +210,6 @@
     flex-wrap: wrap;
     align-items: flex-start;
   }
-  .prospect-btn {
-    min-height: 40px;
-    border-radius: 10px;
-    font-weight: 600;
-    padding: 0.45rem 0.85rem;
-  }
-  .prospect-btn:focus-visible {
-    outline: 2px solid rgba(70, 40, 80, 0.35);
-    outline-offset: 2px;
-  }
-  .prospect-btn-primary {
-    color: #fff;
-    background: var(--crm-primary);
-    border: 1px solid var(--crm-primary);
-  }
-  .prospect-btn-primary:hover { background: var(--crm-primary-strong); border-color: var(--crm-primary-strong); color: #fff; }
-  .prospect-btn-secondary { color: #fff; background: #546179; border: 1px solid #546179; }
-  .prospect-btn-secondary:hover { color: #fff; background: #434e64; border-color: #434e64; }
-  .prospect-btn-neutral { color: #334155; background: #fff; border: 1px solid #d7deea; }
-  .prospect-btn-neutral:hover { background: #f6f8fc; color: #1f2a37; }
-  .prospect-btn-danger { color: #fff; background: #c5394a; border: 1px solid #c5394a; }
-  .prospect-btn-danger:hover { color: #fff; background: #a82b3a; border-color: #a82b3a; }
   .prospect-layout {
     display: grid;
     grid-template-columns: minmax(0, 1.75fr) minmax(280px, 1fr);

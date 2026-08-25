@@ -314,7 +314,6 @@ class EnrollmentForm(forms.ModelForm):
     def _as_money(value):
         value = value if value is not None else Decimal("0.00")
         return Decimal(value).quantize(Decimal("0.01"))
-
     @staticmethod
     def _is_tm_family_course(course):
         if not course:
@@ -581,6 +580,27 @@ class EnrollmentForm(forms.ModelForm):
             enrollment.save()
             self.save_m2m()
         return enrollment
+
+
+class CourseSessionForm(forms.ModelForm):
+    class Meta:
+        model = CourseSession
+        fields = "__all__"
+        widgets = {
+            "start_date": forms.DateInput(
+                attrs={"type": "date"},
+                format="%Y-%m-%d",
+            ),
+            "end_date": forms.DateInput(
+                attrs={"type": "date"},
+                format="%Y-%m-%d",
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field_name in ("start_date", "end_date"):
+            self.fields[field_name].input_formats = ("%Y-%m-%d",)
 
 
 class DisbursementReportingFilterForm(forms.Form):

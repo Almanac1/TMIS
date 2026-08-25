@@ -39,6 +39,7 @@ from .forms import (
     DisbursementReportingFilterForm,
     GovernorCompensationFilterForm,
     CommunicationForm,
+    CourseSessionForm,
     EnrollmentForm,
     InquiryForm,
     InvoicePaymentForm,
@@ -1936,6 +1937,18 @@ class ProspectUpdateView(BaseUpdateView):
         if not form.instance.owner_id:
             form.instance.owner = self.request.user
         return super().form_valid(form)
+
+
+class CourseSessionCreateView(BaseCreateView):
+    model = CourseSession
+    form_class = CourseSessionForm
+    fields = None
+
+
+class CourseSessionUpdateView(BaseUpdateView):
+    model = CourseSession
+    form_class = CourseSessionForm
+    fields = None
 
 
 class EnrollmentCreateView(BaseCreateView):
