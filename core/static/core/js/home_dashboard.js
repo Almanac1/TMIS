@@ -115,11 +115,11 @@
       const context = chart.ctx;
       context.save();
       context.fillStyle = colors.text;
-      context.font = "600 12px system-ui, -apple-system, sans-serif";
+      context.font = "700 13px system-ui, -apple-system, sans-serif";
       context.textBaseline = "middle";
       chart.getDatasetMeta(0).data.forEach((bar, index) => {
         const value = chart.data.datasets[0].data[index];
-        context.fillText(String(value), bar.x + 8, bar.y);
+        context.fillText(Number(value).toLocaleString(), bar.x + 10, bar.y);
       });
       context.restore();
     },
@@ -152,11 +152,12 @@
             data: numberSeries(payload.enrollments_by_course?.values),
             backgroundColor: enrollmentColors,
             hoverBackgroundColor: enrollmentColors.map((color) => darkenHex(color)),
-            borderRadius: 6,
+            borderRadius: 1,
             borderSkipped: false,
-            barPercentage: 0.7,
-            categoryPercentage: 0.78,
-            maxBarThickness: 34,
+            barThickness: 20,
+            maxBarThickness: 22,
+            barPercentage: 0.86,
+            categoryPercentage: 0.72,
           },
         ],
       },
@@ -164,18 +165,64 @@
         responsive: true,
         maintainAspectRatio: false,
         indexAxis: "y",
-        layout: { padding: { right: 42, left: 4 } },
+        layout: { padding: { top: 2, right: 58, bottom: 0, left: 0 } },
         animation: { duration: 250 },
-        plugins: { legend: sharedLegend },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            displayColors: false,
+            backgroundColor: "rgba(20, 24, 36, 0.94)",
+            titleColor: "#ffffff",
+            bodyColor: "#ffffff",
+            padding: 10,
+            cornerRadius: 6,
+            caretSize: 5,
+            titleMarginBottom: 4,
+            bodySpacing: 2,
+            titleFont: { size: 13, weight: "600" },
+            bodyFont: { size: 12, weight: "600" },
+            callbacks: {
+              title(items) {
+                return items[0]?.label || "";
+              },
+              label(context) {
+                const value = Number(context.raw) || 0;
+                return `${value.toLocaleString()} ${value === 1 ? "enrollment" : "enrollments"}`;
+              },
+            },
+          },
+        },
         scales: {
           x: {
             beginAtZero: true,
-            grid: { color: colors.grid, drawBorder: false },
-            ticks: { color: colors.text, font: { size: 12 }, padding: 7 },
+            grace: "8%",
+            border: { display: false },
+            grid: {
+              color: `rgba(${neutralRgb}, 0.14)`,
+              drawBorder: false,
+              tickLength: 0,
+            },
+            ticks: {
+              color: colors.text,
+              font: { size: 12, weight: "500" },
+              maxTicksLimit: 6,
+              precision: 0,
+              padding: 8,
+            },
           },
           y: {
             grid: { display: false },
-            ticks: { color: colors.text, font: { size: 13, weight: "500" }, padding: 8 },
+            border: { display: false },
+            afterFit(axis) {
+              axis.width = Math.min(196, axis.chart.width * 0.34);
+            },
+            ticks: {
+              align: "start",
+              crossAlign: "far",
+              color: colors.text,
+              font: { size: 14, weight: "600" },
+              padding: 10,
+            },
           },
         },
       },
@@ -231,7 +278,7 @@
           tooltip: {
             callbacks: {
               label(context) {
-                return `${context.dataset.label}: GHS ${Number(context.parsed.y).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                return `${context.dataset.label}: ₦${Number(context.parsed.y).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
               },
             },
           },

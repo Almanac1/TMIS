@@ -35,11 +35,8 @@
 
 <div class="crm-nav-section">
   <p class="crm-nav-title">Training</p>
-  <a class="crm-nav-link{% if '/teachers/' in request.path and '/teacherspecializations/' not in request.path %} active{% endif %}" href="{% url 'core:teacher-list' %}">
+  <a class="crm-nav-link{% if '/teachers/' in request.path %} active{% endif %}" href="{% url 'core:teacher-list' %}">
     <i class="bi bi-person-video3"></i><span>Governors</span>
-  </a>
-  <a class="crm-nav-link{% if '/teacherspecializations/' in request.path %} active{% endif %}" href="{% url 'core:teacherspecialization-list' %}">
-    <i class="bi bi-award"></i><span>Governor Specializations</span>
   </a>
   <a class="crm-nav-link{% if '/locations/' in request.path %} active{% endif %}" href="{% url 'core:location-list' %}">
     <i class="bi bi-geo-alt"></i><span>Locations</span>

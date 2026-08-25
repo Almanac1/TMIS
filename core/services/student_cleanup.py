@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 from django.db import transaction
 from django.utils import timezone
 
+from core.currency import format_currency
 from core.models import (
     Communication,
     CommunicationType,
@@ -471,7 +472,7 @@ def audit_student_conversion(student: Student):
                 category = "partial_or_outstanding"
                 reason = (
                     "Confirmed payment was partial; outstanding balance at "
-                    f"conversion was GHS {_money(outstanding):.2f}."
+                    f"conversion was {format_currency(_money(outstanding))}."
                 )
 
     dependencies = get_student_dependencies(student)

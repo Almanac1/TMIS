@@ -10,6 +10,7 @@ from django.utils.html import format_html
 from django.db.models import Count, Sum
 from django.utils import timezone
 
+from .currency import format_currency
 from .models import (
     Communication,
     Contact,
@@ -706,7 +707,7 @@ class CourseAdmin(admin.ModelAdmin):
         "name",
         "format",
         "duration_weeks",
-        "standard_fee",
+        "standard_fee_display",
         "status",
         "created_at",
     )
@@ -715,6 +716,10 @@ class CourseAdmin(admin.ModelAdmin):
     ordering = ("name",)
     readonly_fields = ("created_at", "updated_at")
     date_hierarchy = "created_at"
+
+    @admin.display(description="Standard fee", ordering="standard_fee")
+    def standard_fee_display(self, obj):
+        return format_currency(obj.standard_fee)
 
 
 @admin.register(CourseSession)
@@ -780,9 +785,9 @@ class EnrollmentAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "student",
         "session",
         "status",
-        "fee_amount",
-        "discount_amount",
-        "balance_due",
+        "fee_amount_display",
+        "discount_amount_display",
+        "balance_due_display",
         "has_invoice",
         "invoice_link",
         "has_disbursement",
@@ -818,6 +823,18 @@ class EnrollmentAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "generate_disbursements_for_selected_enrollments",
     )
     change_form_template = "admin/core/enrollment/change_form.html"
+
+    @admin.display(description="Fee amount", ordering="fee_amount")
+    def fee_amount_display(self, obj):
+        return format_currency(obj.fee_amount)
+
+    @admin.display(description="Discount", ordering="discount_amount")
+    def discount_amount_display(self, obj):
+        return format_currency(obj.discount_amount)
+
+    @admin.display(description="Balance due", ordering="balance_due")
+    def balance_due_display(self, obj):
+        return format_currency(obj.balance_due)
 
     def get_urls(self):
         urls = super().get_urls()
@@ -1082,11 +1099,11 @@ class DisbursementAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "teacher",
         "location",
         "session_display",
-        "teacher_amount",
-        "national_office_amount",
-        "ico_amount",
-        "marketing_amount",
-        "balance_due_snapshot",
+        "teacher_amount_display",
+        "national_office_amount_display",
+        "ico_amount_display",
+        "marketing_amount_display",
+        "balance_due_snapshot_display",
     )
     search_fields = (
         "enrollment__student__prospect__contact__first_name",
@@ -1130,6 +1147,26 @@ class DisbursementAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
+
+    @admin.display(description="Governor amount", ordering="teacher_amount")
+    def teacher_amount_display(self, obj):
+        return format_currency(obj.teacher_amount)
+
+    @admin.display(description="National office", ordering="national_office_amount")
+    def national_office_amount_display(self, obj):
+        return format_currency(obj.national_office_amount)
+
+    @admin.display(description="ICO amount", ordering="ico_amount")
+    def ico_amount_display(self, obj):
+        return format_currency(obj.ico_amount)
+
+    @admin.display(description="Marketing amount", ordering="marketing_amount")
+    def marketing_amount_display(self, obj):
+        return format_currency(obj.marketing_amount)
+
+    @admin.display(description="Balance due", ordering="balance_due_snapshot")
+    def balance_due_snapshot_display(self, obj):
+        return format_currency(obj.balance_due_snapshot)
 
     def get_urls(self):
         urls = super().get_urls()
@@ -1216,7 +1253,7 @@ class InvoiceAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
         "enrollment",
         "issue_date",
         "due_date",
-        "total_amount",
+        "total_amount_display",
         "status",
     )
     search_fields = (
@@ -1231,13 +1268,17 @@ class InvoiceAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     date_hierarchy = "issue_date"
     autocomplete_fields = ("enrollment",)
 
+    @admin.display(description="Total amount", ordering="total_amount")
+    def total_amount_display(self, obj):
+        return format_currency(obj.total_amount)
+
 
 @admin.register(Payment)
 class PaymentAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     list_display = (
         "invoice",
         "payment_date",
-        "amount_paid",
+        "amount_paid_display",
         "payment_method",
         "confirmation_status",
     )
@@ -1248,6 +1289,10 @@ class PaymentAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
     date_hierarchy = "payment_date"
     autocomplete_fields = ("invoice",)
+
+    @admin.display(description="Amount paid", ordering="amount_paid")
+    def amount_paid_display(self, obj):
+        return format_currency(obj.amount_paid)
 
 
 @admin.register(Communication)
@@ -1320,6 +1365,9 @@ class ContactAdmin(OwnerScopedAdminMixin, admin.ModelAdmin):
     )
     readonly_fields = ("crm_reference", "created_at", "updated_at")
     date_hierarchy = "created_at"
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Meditator)

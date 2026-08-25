@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import DecimalField, Sum, Value
 from django.db.models.functions import Coalesce
 
+from core.currency import format_currency
 from core.models import (
     Enrollment,
     EnrollmentStatus,
@@ -88,7 +89,7 @@ def check_enrollment_completion_financials(enrollment: Enrollment) -> Completion
             outstanding_balance=outstanding,
             message=(
                 "Enrollment cannot be completed until the outstanding balance of "
-                f"GHS {outstanding:.2f} is paid with confirmed payments."
+                f"{format_currency(outstanding)} is paid with confirmed payments."
             ),
         )
     return CompletionFinancialCheck(
@@ -150,7 +151,7 @@ def check_student_completion_financials(student: Student) -> CompletionFinancial
                 message=(
                     "Student cannot be completed while invoice "
                     f"{invoice.invoice_number} has an outstanding confirmed-payment "
-                    f"balance of GHS {outstanding:.2f}."
+                    f"balance of {format_currency(outstanding)}."
                 ),
             )
     return CompletionFinancialCheck(

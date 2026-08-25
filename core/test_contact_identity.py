@@ -4,7 +4,7 @@ from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import IntegrityError, transaction
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from unittest.mock import patch
 
 from core.forms import ProspectForm, StudentCreateForm, StudentForm
@@ -307,6 +307,13 @@ class CanonicalIdentityUITests(TestCase):
         self.assertEqual(self.contact.email, "esi.updated@example.com")
         self.assertEqual(self.student.last_name, "Boateng")
         self.assertEqual(self.meditator.contact.email, "esi.updated@example.com")
+
+    def test_contact_deletion_is_not_exposed_by_product_routes(self):
+        response = self.client.get(reverse("core:contact-list"))
+
+        self.assertFalse(response.context["can_delete"])
+        with self.assertRaises(NoReverseMatch):
+            reverse("core:contact-delete", kwargs={"pk": self.contact.pk})
 
 
 class DomainRelationshipPlacementTests(TestCase):

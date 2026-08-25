@@ -178,7 +178,7 @@ class GovernorCompensationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Governor Compensation")
         self.assertContains(response, "Total Compensation Due")
-        self.assertContains(response, "GHS 500.00")
+        self.assertContains(response, "₦500.00")
         self.assertContains(response, "Amount Already Disbursed")
         self.assertContains(response, "Outstanding Compensation")
 
@@ -262,3 +262,43 @@ class GovernorCompensationTests(TestCase):
         self.assertEqual(totals.enrollment_count, 2)
         self.assertEqual(totals.compensation_due, Decimal("800.00"))
         self.assertEqual(totals.compensation_funded, Decimal("500.00"))
+
+    def test_compensation_filters_apply_to_existing_enrollments(self):
+        funded = self.create_enrollment(confirmed_payment=Decimal("1000.00"))
+        self.create_enrollment(confirmed_payment=None)
+
+        data = get_governor_compensation_data(
+            user=self.user,
+            filters={"course": funded.course, "funding_status": "fully_funded"},
+        )
+
+        self.assertEqual(data["totals"].enrollment_count, 1)
+        self.assertEqual(data["totals"].compensation_due, Decimal("500.00"))
+        self.assertEqual(data["totals"].compensation_funded, Decimal("500.00"))
+
+    def test_monthly_analytics_use_the_actual_financial_event_dates(self):
+        enrollment = self.create_enrollment(confirmed_payment=Decimal("400.00"))
+        enrollment_date = timezone.now() - timedelta(days=65)
+        payment_date = timezone.now() - timedelta(days=5)
+        Enrollment.objects.filter(pk=enrollment.pk).update(enrollment_date=enrollment_date)
+        Payment.objects.filter(invoice=enrollment.invoice).update(payment_date=payment_date)
+
+        monthly = get_governor_compensation_data(user=self.user)["analytics"]["monthly"]
+        enrollment_label = timezone.localtime(enrollment_date).strftime("%b %Y")
+        payment_label = timezone.localtime(payment_date).strftime("%b %Y")
+
+        self.assertEqual(monthly["accrued"][monthly["labels"].index(enrollment_label)], 500.0)
+        self.assertEqual(monthly["funded"][monthly["labels"].index(payment_label)], 200.0)
+
+    def test_teacher_earnings_page_renders_filters_and_analysis(self):
+        self.create_enrollment(confirmed_payment=Decimal("400.00"))
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("core:teacher-earnings-dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Compensation Position")
+        self.assertContains(response, "Compensation Trend")
+        self.assertContains(response, "Funding Coverage")
+        self.assertContains(response, 'id="courseCompensationChart"')
+        self.assertNotContains(response, 'id="id_teacher"')

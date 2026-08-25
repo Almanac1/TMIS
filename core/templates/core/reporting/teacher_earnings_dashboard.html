@@ -1,41 +1,68 @@
 {% extends "core/crud/base.html" %}
+{% load static currency %}
 {% block title %}Governor Compensation{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'core/css/teacher_earnings_dashboard.css' %}">{% endblock %}
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
-  <div>
-    <h1 class="h3 mb-1">Governor Compensation</h1>
-    <p class="text-muted mb-0">Entitlement is based on the full post-discount enrollment value. Generated {{ generated_on }}.</p>
+<div class="earnings-dashboard">
+  <header class="earnings-header">
+    <div><div class="earnings-eyebrow">FINANCE &amp; REPORTING</div><h1>Governor Compensation</h1><p>Entitlement, payment funding, and disbursement performance from valid enrollments.</p></div>
+    <a href="{% url 'core:home' %}" class="btn earnings-back"><i class="bi bi-arrow-left"></i> Back to dashboard</a>
+  </header>
+
+  <form method="get" class="earnings-filter-card" aria-label="Compensation report filters">
+    <div class="earnings-filter-heading"><i class="bi bi-sliders"></i><div><strong>Report filters</strong><span>Enrollment dates define the included compensation records.</span></div></div>
+    <div class="earnings-filter-grid">
+      <div><label for="{{ filter_form.start_date.id_for_label }}">From</label>{{ filter_form.start_date }}</div>
+      <div><label for="{{ filter_form.end_date.id_for_label }}">To</label>{{ filter_form.end_date }}</div>
+      {% if is_administrator %}<div><label for="{{ filter_form.teacher.id_for_label }}">Governor</label>{{ filter_form.teacher }}</div>{% endif %}
+      <div><label for="{{ filter_form.course.id_for_label }}">Course</label>{{ filter_form.course }}</div>
+      <div><label for="{{ filter_form.funding_status.id_for_label }}">Funding</label>{{ filter_form.funding_status }}</div>
+      <div><label for="{{ filter_form.disbursement_status.id_for_label }}">Disbursement</label>{{ filter_form.disbursement_status }}</div>
+      <div class="earnings-filter-actions"><button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-funnel"></i> Apply</button>{% if request.GET %}<a class="btn btn-link btn-sm" href="{% url 'core:teacher-earnings-dashboard' %}">Reset</a>{% endif %}</div>
+    </div>
+    {% if filter_form.non_field_errors %}<div class="alert alert-danger py-2 mt-3 mb-0">{{ filter_form.non_field_errors }}</div>{% endif %}
+  </form>
+
+  <section class="earnings-kpis" aria-label="Compensation summary">
+    <article class="earnings-kpi earnings-kpi--plum"><div class="earnings-kpi-icon"><i class="bi bi-award"></i></div><div><strong>{{ totals.compensation_due|naira }}</strong><span>Total Compensation Due</span></div></article>
+    <article class="earnings-kpi earnings-kpi--green"><div class="earnings-kpi-icon"><i class="bi bi-check2-circle"></i></div><div><strong>{{ totals.compensation_funded|naira }}</strong><span>Funded</span></div></article>
+    <article class="earnings-kpi earnings-kpi--blue"><div class="earnings-kpi-icon"><i class="bi bi-bank"></i></div><div><strong>{{ totals.amount_disbursed|naira }}</strong><span>Disbursed</span></div></article>
+    <article class="earnings-kpi earnings-kpi--amber"><div class="earnings-kpi-icon"><i class="bi bi-hourglass-split"></i></div><div><strong>{{ totals.outstanding_compensation|naira }}</strong><span>Outstanding</span></div></article>
+    <article class="earnings-kpi earnings-kpi--neutral"><div class="earnings-kpi-icon"><i class="bi bi-journal-check"></i></div><div><strong>{{ totals.enrollment_count }}</strong><span>Enrollments</span></div></article>
+  </section>
+
+  <div class="earnings-grid earnings-grid--position">
+    <article class="earnings-card">
+      <div class="earnings-card-header"><div><h2>Compensation Position</h2><p>How total entitlement is currently composed</p></div></div>
+      <div class="position-total"><span>Total entitlement</span><strong>{{ totals.compensation_due|naira }}</strong></div>
+      <div class="position-bar" role="img" aria-label="Compensation position"><span class="position-bar__disbursed" data-value="{{ position.disbursed }}"></span><span class="position-bar__funded" data-value="{{ position.funded_undisbursed }}"></span><span class="position-bar__unfunded" data-value="{{ position.unfunded }}"></span></div>
+      <div class="position-legend">
+        <div><i class="legend-dot legend-dot--blue"></i><span>Disbursed</span><strong>{{ totals.amount_disbursed|naira }}</strong></div>
+        <div><i class="legend-dot legend-dot--green"></i><span>Funded, awaiting payout</span><strong>{{ totals.outstanding_disbursement|naira }}</strong></div>
+        <div><i class="legend-dot legend-dot--amber"></i><span>Not yet funded</span><strong>{{ position.unfunded|naira }}</strong></div>
+      </div>
+    </article>
+    <article class="earnings-card funding-card"><div class="earnings-card-header"><div><h2>Funding Coverage</h2><p>Confirmed receipts against entitlement</p></div></div><div class="funding-chart-wrap"><canvas id="fundingCoverageChart"></canvas><div class="funding-chart-label"><strong>{{ position.funding_rate|floatformat:1 }}%</strong><span>funded</span></div></div></article>
   </div>
-  <a href="{% url 'core:home' %}" class="btn btn-outline-secondary btn-sm">Back to dashboard</a>
-</div>
 
-<div class="row g-3 mb-4">
-  <div class="col-12 col-md-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-muted small text-uppercase">Total Compensation Due</div><div class="h4 mb-0 mt-1">GHS {{ totals.compensation_due|floatformat:2 }}</div></div></div></div>
-  <div class="col-12 col-md-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-muted small text-uppercase">Funded by Confirmed Payments</div><div class="h4 mb-0 mt-1">GHS {{ totals.compensation_funded|floatformat:2 }}</div></div></div></div>
-  <div class="col-12 col-md-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-muted small text-uppercase">Amount Disbursed</div><div class="h4 mb-0 mt-1">GHS {{ totals.amount_disbursed|floatformat:2 }}</div></div></div></div>
-  <div class="col-12 col-md-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-muted small text-uppercase">Outstanding Compensation</div><div class="h4 mb-0 mt-1">GHS {{ totals.outstanding_compensation|floatformat:2 }}</div></div></div></div>
-  <div class="col-12 col-md-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-muted small text-uppercase">Enrollments</div><div class="h4 mb-0 mt-1">{{ totals.enrollment_count }}</div></div></div></div>
-</div>
+  <article class="earnings-card earnings-card--wide"><div class="earnings-card-header"><div><h2>Compensation Trend</h2><p>Accrued by enrollment date, funded by confirmed payment date, and disbursed by payout date</p></div><span class="earnings-card-note">₦</span></div><div class="chart-wrap chart-wrap--trend"><canvas id="compensationTrendChart"></canvas></div></article>
 
-{% if is_administrator %}
-<div class="card mb-4">
-  <div class="card-header bg-white fw-semibold">Compensation by Governor</div>
-  <div class="table-responsive"><table class="table table-hover align-middle mb-0">
-    <thead class="table-light"><tr><th>Governor</th><th>Enrollments</th><th>Due</th><th>Funded</th><th>Disbursed</th><th>Outstanding</th></tr></thead>
-    <tbody>{% for row in teachers %}<tr><td class="fw-semibold">{{ row.teacher }}</td><td>{{ row.totals.enrollment_count }}</td><td>GHS {{ row.totals.compensation_due|floatformat:2 }}</td><td>GHS {{ row.totals.compensation_funded|floatformat:2 }}</td><td>GHS {{ row.totals.amount_disbursed|floatformat:2 }}</td><td>GHS {{ row.totals.outstanding_compensation|floatformat:2 }}</td></tr>{% empty %}<tr><td colspan="6" class="text-muted">No Governors found.</td></tr>{% endfor %}</tbody>
-  </table></div>
-</div>
-{% endif %}
+  <div class="earnings-grid earnings-grid--analysis">
+    {% if is_administrator %}<article class="earnings-card"><div class="earnings-card-header"><div><h2>Compensation by Governor</h2><p>Top governors by total entitlement in this view</p></div></div><div class="chart-wrap chart-wrap--governors"><canvas id="governorCompensationChart"></canvas></div></article>{% endif %}
+    <article class="earnings-card {% if not is_administrator %}earnings-card--wide{% endif %}"><div class="earnings-card-header"><div><h2>Payout Aging</h2><p>Funded compensation still awaiting disbursement</p></div></div><div class="chart-wrap chart-wrap--aging"><canvas id="payoutAgingChart"></canvas></div><p class="earnings-footnote">Aging uses the earliest confirmed payment date for each funded enrollment.</p></article>
+  </div>
 
-<div class="card">
-  <div class="card-header bg-white"><div class="fw-semibold">Enrollment-level calculation</div><div class="small text-muted">Funded compensation is 50% of confirmed receipts; it does not change total entitlement.</div></div>
-  <div class="table-responsive"><table class="table table-hover align-middle mb-0">
-    <thead class="table-light"><tr>{% if is_administrator %}<th>Governor</th>{% endif %}<th>Student</th><th>Course</th><th>Date</th><th>Enrollment Amount</th><th>Paid</th><th>Student Balance</th><th>Compensation Due</th><th>Funded</th><th>Disbursed</th><th>Outstanding</th></tr></thead>
-    <tbody>
-      {% for row in enrollments %}
-      <tr>{% if is_administrator %}<td>{{ row.teacher }}</td>{% endif %}<td><a href="{% url 'core:student-detail' row.student.pk %}" class="link-body-emphasis text-decoration-none fw-semibold">{{ row.student }}</a></td><td>{{ row.course }}</td><td>{{ row.enrollment_date|date:"M j, Y" }}</td><td>GHS {{ row.enrollment_amount|floatformat:2 }}</td><td>GHS {{ row.amount_paid|floatformat:2 }}</td><td>GHS {{ row.student_balance|floatformat:2 }}</td><td>GHS {{ row.compensation_due|floatformat:2 }}</td><td>GHS {{ row.compensation_funded|floatformat:2 }}</td><td>GHS {{ row.amount_disbursed|floatformat:2 }}</td><td>GHS {{ row.outstanding_compensation|floatformat:2 }}</td></tr>
-      {% empty %}<tr><td colspan="{% if is_administrator %}11{% else %}10{% endif %}" class="text-muted">No valid enrollments contribute to compensation.</td></tr>{% endfor %}
-    </tbody>
-  </table></div>
+  <article class="earnings-card earnings-card--wide"><div class="earnings-card-header"><div><h2>Compensation by Course</h2><p>Entitlement and funded compensation across courses</p></div></div><div class="chart-wrap chart-wrap--courses"><canvas id="courseCompensationChart"></canvas></div></article>
+
+  {% if is_administrator %}<article class="earnings-card earnings-table-card"><div class="earnings-card-header"><div><h2>Governor Summary</h2><p>Exact report totals by Governor</p></div></div><div class="table-responsive"><table class="table earnings-table align-middle mb-0"><thead><tr><th>Governor</th><th>Enrollments</th><th>Due</th><th>Funded</th><th>Disbursed</th><th>Outstanding</th></tr></thead><tbody>{% for row in teachers %}<tr><td class="fw-semibold">{{ row.teacher }}</td><td>{{ row.totals.enrollment_count }}</td><td>{{ row.totals.compensation_due|naira }}</td><td class="amount-funded">{{ row.totals.compensation_funded|naira }}</td><td>{{ row.totals.amount_disbursed|naira }}</td><td class="amount-outstanding">{{ row.totals.outstanding_compensation|naira }}</td></tr>{% empty %}<tr><td colspan="6" class="empty-row">No Governors match these filters.</td></tr>{% endfor %}</tbody></table></div></article>{% endif %}
+
+  <article class="earnings-card earnings-table-card">
+    <div class="earnings-card-header"><div><h2>Enrollment-level Calculation</h2><p>Funded compensation is 50% of confirmed receipts; it does not change total entitlement.</p></div><span class="record-count">{{ totals.enrollment_count }} record{{ totals.enrollment_count|pluralize }}</span></div>
+    <div class="table-responsive"><table class="table earnings-table align-middle mb-0"><thead><tr>{% if is_administrator %}<th>Governor</th>{% endif %}<th>Student</th><th>Course</th><th>Date</th><th>Enrollment</th><th>Paid</th><th>Student Balance</th><th>Compensation Due</th><th>Funded</th><th>Disbursed</th><th>Outstanding</th></tr></thead><tbody>
+      {% for row in enrollments %}<tr>{% if is_administrator %}<td>{{ row.teacher }}</td>{% endif %}<td><a href="{% url 'core:student-detail' row.student.pk %}" class="student-link">{{ row.student }}</a></td><td>{{ row.course }}</td><td>{{ row.enrollment_date|date:"M j, Y" }}</td><td>{{ row.enrollment_amount|naira }}</td><td>{{ row.amount_paid|naira }}</td><td>{{ row.student_balance|naira }}</td><td class="fw-semibold">{{ row.compensation_due|naira }}</td><td class="amount-funded">{{ row.compensation_funded|naira }}</td><td>{{ row.amount_disbursed|naira }}</td><td class="amount-outstanding">{{ row.outstanding_compensation|naira }}</td></tr>{% empty %}<tr><td colspan="{% if is_administrator %}11{% else %}10{% endif %}" class="empty-row">No valid enrollments match these filters.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </article>
 </div>
+{{ analytics|json_script:"earnings-analytics-data" }}{{ position|json_script:"earnings-position-data" }}
 {% endblock %}
+{% block extra_js %}<script src="{% static 'core/js/teacher_earnings_dashboard.js' %}"></script>{% endblock %}

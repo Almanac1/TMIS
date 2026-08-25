@@ -1,5 +1,5 @@
 {% extends "core/crud/base.html" %}
-{% load static %}
+{% load static currency %}
 
 {% block title %}TMIS CRM Dashboard{% endblock %}
 
@@ -40,9 +40,9 @@
         </header>
         <div class="dashboard-card-body">
           <div class="financial-metrics">
-            <div class="financial-metric"><span>Invoiced</span><strong>GHS {{ dashboard.kpis.invoiced_total|floatformat:2 }}</strong></div>
-            <div class="financial-metric received"><span>Received</span><strong>GHS {{ dashboard.kpis.collected_total|floatformat:2 }}</strong></div>
-            <div class="financial-metric outstanding"><span>Outstanding</span><strong>GHS {{ dashboard.kpis.outstanding_amount|floatformat:2 }}</strong></div>
+            <div class="financial-metric"><span>Invoiced</span><strong>{{ dashboard.kpis.invoiced_total|naira }}</strong></div>
+            <div class="financial-metric received"><span>Received</span><strong>{{ dashboard.kpis.collected_total|naira }}</strong></div>
+            <div class="financial-metric outstanding"><span>Outstanding</span><strong>{{ dashboard.kpis.outstanding_amount|naira }}</strong></div>
           </div>
           <div class="dashboard-chart revenue-chart"><canvas id="revenueTrendChart"></canvas></div>
         </div>
@@ -56,9 +56,9 @@
         </header>
         <div class="dashboard-card-body">
           <div class="compensation-metrics">
-            <div class="compensation-metric"><span>Total Compensation Due</span><strong>GHS {{ dashboard.governor_compensation.totals.compensation_due|floatformat:2 }}</strong></div>
-            <div class="compensation-metric disbursed"><span>Amount Already Disbursed</span><strong>GHS {{ dashboard.governor_compensation.totals.amount_disbursed|floatformat:2 }}</strong></div>
-            <div class="compensation-metric outstanding"><span>Outstanding Compensation</span><strong>GHS {{ dashboard.governor_compensation.totals.outstanding_compensation|floatformat:2 }}</strong></div>
+            <div class="compensation-metric"><span>Total Compensation Due</span><strong>{{ dashboard.governor_compensation.totals.compensation_due|naira }}</strong></div>
+            <div class="compensation-metric disbursed"><span>Amount Already Disbursed</span><strong>{{ dashboard.governor_compensation.totals.amount_disbursed|naira }}</strong></div>
+            <div class="compensation-metric outstanding"><span>Outstanding Compensation</span><strong>{{ dashboard.governor_compensation.totals.outstanding_compensation|naira }}</strong></div>
           </div>
         </div>
       </section>

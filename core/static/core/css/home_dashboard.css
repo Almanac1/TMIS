@@ -208,6 +208,14 @@
   height: 290px;
 }
 
+.enrollment-card .dashboard-chart {
+  height: 330px;
+}
+
+.enrollment-card .dashboard-card-body {
+  padding: 0.55rem 0.7rem 0.7rem;
+}
+
 .revenue-chart {
   height: 300px;
 }

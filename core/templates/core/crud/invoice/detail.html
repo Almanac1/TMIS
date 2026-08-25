@@ -1,4 +1,5 @@
 {% extends "core/crud/base.html" %}
+{% load currency %}
 
 {% block title %}Invoice {{ object.invoice_number }}{% endblock %}
 {% block breadcrumb_current %}
@@ -70,7 +71,7 @@
       <div class="card-body">
         <div class="text-muted small">Outstanding Balance</div>
         <div class="fw-semibold {% if outstanding_balance > 0 %}text-warning{% else %}text-success{% endif %}">
-          ₵{{ outstanding_balance|floatformat:2 }}
+          {{ outstanding_balance|naira }}
         </div>
       </div>
     </div>
@@ -91,25 +92,25 @@
     <div class="row g-3">
       <div class="col-md-6">
         <div class="text-muted small">Fee Amount (Subtotal)</div>
-        <div class="fw-semibold">₵{{ object.subtotal|floatformat:2 }}</div>
+        <div class="fw-semibold">{{ object.subtotal|naira }}</div>
       </div>
       <div class="col-md-6">
         <div class="text-muted small">Discount</div>
-        <div class="fw-semibold">₵{{ object.discount_amount|floatformat:2 }}</div>
+        <div class="fw-semibold">{{ object.discount_amount|naira }}</div>
       </div>
       <div class="col-md-6">
         <div class="text-muted small">Total Amount</div>
-        <div class="fw-semibold">₵{{ object.total_amount|floatformat:2 }}</div>
+        <div class="fw-semibold">{{ object.total_amount|naira }}</div>
       </div>
       <div class="col-md-6">
         <div class="text-muted small">Balance Due</div>
         <div class="fw-semibold {% if outstanding_balance > 0 %}text-warning{% else %}text-success{% endif %}">
-          ₵{{ outstanding_balance|floatformat:2 }}
+          {{ outstanding_balance|naira }}
         </div>
       </div>
       <div class="col-md-6">
         <div class="text-muted small">Payments Made</div>
-        <div class="fw-semibold">₵{{ total_paid|floatformat:2 }}</div>
+        <div class="fw-semibold">{{ total_paid|naira }}</div>
       </div>
     </div>
   </div>
@@ -132,7 +133,7 @@
         {% for payment in payments %}
           <tr>
             <td>{{ payment.payment_date|date:"M d, Y g:i A" }}</td>
-            <td>₵{{ payment.amount_paid|floatformat:2 }}</td>
+            <td>{{ payment.amount_paid|naira }}</td>
             <td>{{ payment.get_payment_method_display }}</td>
             <td>{{ payment.reference_number|default:"-" }}</td>
             <td>{{ payment.get_confirmation_status_display }}</td>

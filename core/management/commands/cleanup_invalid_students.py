@@ -3,6 +3,7 @@ from collections import Counter
 from django.core.management.base import BaseCommand, CommandError
 from django.db import IntegrityError, transaction
 
+from core.currency import format_currency
 from core.models import ProspectStatus
 from core.services.student_cleanup import (
     audit_student_conversions,
@@ -291,19 +292,19 @@ class Command(BaseCommand):
                 self.stdout.write(
                     "Invoice "
                     f"ID={invoice.invoice_id} Number={invoice.invoice_number} "
-                    f"Status={invoice.status} Amount=GHS {invoice.total_amount:.2f} "
-                    f"Total payment received at conversion=GHS "
-                    f"{invoice.confirmed_paid_at_conversion:.2f} "
-                    f"Outstanding at conversion=GHS "
-                    f"{invoice.outstanding_at_conversion:.2f} "
+                    f"Status={invoice.status} Amount={format_currency(invoice.total_amount)} "
+                    "Total payment received at conversion="
+                    f"{format_currency(invoice.confirmed_paid_at_conversion)} "
+                    "Outstanding at conversion="
+                    f"{format_currency(invoice.outstanding_at_conversion)} "
                     f"Existed={invoice.existed_at_conversion} "
                     f"Issued={invoice.issued_at_conversion}"
                 )
         else:
             self.stdout.write(
-                "Invoice ID=- Amount=GHS 0.00 "
-                "Total payment received at conversion=GHS 0.00 "
-                "Outstanding at conversion=GHS 0.00"
+                f"Invoice ID=- Amount={format_currency(0)} "
+                f"Total payment received at conversion={format_currency(0)} "
+                f"Outstanding at conversion={format_currency(0)}"
             )
 
         nonzero_dependencies = {

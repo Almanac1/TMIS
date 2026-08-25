@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% load crispy_forms_tags %}
+{% load crispy_forms_tags currency %}
 
 {% block content %}
   <div id="content-main">
@@ -26,7 +26,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr><td>Total Disbursed Amount</td><td>{{ report.total_amount }}</td></tr>
+          <tr><td>Total Disbursed Amount</td><td>{{ report.total_amount|naira }}</td></tr>
         </tbody>
       </table>
     {% endif %}

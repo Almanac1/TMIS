@@ -102,7 +102,7 @@ class EnrollmentCompletionFinancialGateTests(TestCase):
         invoice = self._invoice()
         self._payment(invoice, Decimal("200.00"), PaymentConfirmationStatus.CONFIRMED)
 
-        with self.assertRaisesMessage(ValidationError, "GHS 300.00"):
+        with self.assertRaisesMessage(ValidationError, "₦300.00"):
             self._complete_enrollment()
 
     def test_pending_failed_and_reversed_payments_do_not_count(self):
@@ -114,7 +114,7 @@ class EnrollmentCompletionFinancialGateTests(TestCase):
         ):
             self._payment(invoice, Decimal("500.00"), status)
 
-        with self.assertRaisesMessage(ValidationError, "GHS 500.00"):
+        with self.assertRaisesMessage(ValidationError, "₦500.00"):
             self._complete_enrollment()
         self.assertEqual(invoice.total_paid, Decimal("0.00"))
         self.assertEqual(invoice.balance_due, Decimal("500.00"))
@@ -135,7 +135,7 @@ class EnrollmentCompletionFinancialGateTests(TestCase):
         self._payment(invoice, Decimal("250.00"), PaymentConfirmationStatus.CONFIRMED)
         self.student.enrollment_status = EnrollmentStatus.COMPLETED
 
-        with self.assertRaisesMessage(ValidationError, "GHS 250.00"):
+        with self.assertRaisesMessage(ValidationError, "₦250.00"):
             self.student.save(update_fields=["enrollment_status", "updated_at"])
 
     def test_student_can_complete_after_all_enrollments_are_fully_paid(self):
@@ -162,4 +162,4 @@ class EnrollmentCompletionFinancialGateTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Completion integrity violation")
-        self.assertContains(response, "GHS 400.00")
+        self.assertContains(response, "₦400.00")

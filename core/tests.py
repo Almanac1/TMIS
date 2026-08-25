@@ -636,7 +636,7 @@ class ProspectConversionFinancialRequirementTests(TestCase):
 
         self.assertContains(
             response,
-            "Cannot convert this prospect: the donation statement has an outstanding balance of GHS 250.00.",
+            "Cannot convert this prospect: the donation statement has an outstanding balance of ₦250.00.",
         )
         self._assert_not_converted(expected_student_count=1)
 
@@ -750,9 +750,9 @@ class CleanupInvalidStudentsCommandTests(TestCase):
         self.assertIn(f"Prospect ID={prospect.pk}", rendered)
         self.assertIn(f"Contact ID={prospect.contact_id}", rendered)
         self.assertIn("Invoice ID=-", rendered)
-        self.assertIn("Amount=GHS 0.00", rendered)
-        self.assertIn("Total payment received at conversion=GHS 0.00", rendered)
-        self.assertIn("Outstanding at conversion=GHS 0.00", rendered)
+        self.assertIn("Amount=₦0.00", rendered)
+        self.assertIn("Total payment received at conversion=₦0.00", rendered)
+        self.assertIn("Outstanding at conversion=₦0.00", rendered)
         self.assertIn("Violation=no_invoice", rendered)
         self.assertIn("Dry run only: no database records were modified.", rendered)
         self.assertTrue(Student.objects.filter(pk=student.pk).exists())
@@ -854,11 +854,11 @@ class CleanupInvalidStudentsCommandTests(TestCase):
 
         rendered = output.getvalue()
         self.assertIn(f"Invoice ID={invoice.pk}", rendered)
-        self.assertIn("Amount=GHS 500.00", rendered)
-        self.assertIn("Total payment received at conversion=GHS 125.00", rendered)
-        self.assertIn("Outstanding at conversion=GHS 375.00", rendered)
+        self.assertIn("Amount=₦500.00", rendered)
+        self.assertIn("Total payment received at conversion=₦125.00", rendered)
+        self.assertIn("Outstanding at conversion=₦375.00", rendered)
         self.assertIn("Violation=partial_or_outstanding", rendered)
-        self.assertIn("outstanding balance at conversion was GHS 375.00", rendered)
+        self.assertIn("outstanding balance at conversion was ₦375.00", rendered)
         self.assertTrue(Student.objects.filter(pk=student.pk).exists())
 
     def test_execute_requires_explicit_student_ids(self):

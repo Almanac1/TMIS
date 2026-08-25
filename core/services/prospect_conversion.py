@@ -7,6 +7,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
 
+from core.currency import format_currency
 from core.models import (
     Invoice,
     InvoiceStatus,
@@ -147,7 +148,7 @@ def _evaluate_invoice_rows(rows):
             return _blocked(
                 (
                     "the donation statement has an outstanding balance of "
-                    f"GHS {outstanding:.2f}."
+                    f"{format_currency(outstanding)}."
                 ),
                 invoice_id=invoice_id,
                 outstanding=outstanding,

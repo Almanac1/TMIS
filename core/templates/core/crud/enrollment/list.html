@@ -5,47 +5,8 @@
   <li class="breadcrumb-item active" aria-current="page">List</li>
 {% endblock %}
 
-{% block extra_css %}
-<style>
-  .enroll-table th,
-  .enroll-table td {
-    vertical-align: middle;
-    padding: 0.55rem 0.65rem;
-  }
-  .enroll-id,
-  .enroll-session {
-    white-space: nowrap;
-  }
-  .enroll-student,
-  .enroll-course,
-  .enroll-invoice {
-    max-width: 220px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .enroll-actions {
-    white-space: nowrap;
-  }
-  .enroll-actions .btn {
-    padding: 0.2rem 0.55rem;
-    font-size: 0.8rem;
-  }
-  .enroll-chip {
-    display: inline-block;
-    padding: 0.18rem 0.5rem;
-    border-radius: 999px;
-    font-size: 0.74rem;
-    font-weight: 600;
-    white-space: nowrap;
-    background: #eef2ff;
-    color: #3730a3;
-  }
-</style>
-{% endblock %}
-
 {% block content %}
-<div class="crud-list-shell">
+<div class="crud-list-shell crm-list-page">
   <div class="page-head">
     <h1 class="page-title">{{ model_name_plural }}</h1>
     <div class="page-actions">
@@ -56,9 +17,11 @@
 
   {% include "core/crud/partials/list_search_card.html" %}
 
+  <div class="crm-result-count">{% if is_paginated %}{{ page_obj.paginator.count }}{% else %}{{ object_list|length }}{% endif %} enrollments match this filter.</div>
   <div class="table-card">
     <div class="table-responsive">
-      <table class="table table-striped table-hover mb-0 align-middle enroll-table">
+      <table class="table table-striped table-hover align-middle crm-list-table crm-list-table--enrollments">
+        <colgroup><col class="crm-col-id"><col class="crm-col-record"><col class="crm-col-course"><col class="crm-col-session"><col class="crm-col-invoice"><col class="crm-col-status"><col class="crm-col-actions"></colgroup>
         <thead class="table-light">
           <tr>
             <th>ID</th>
@@ -73,13 +36,13 @@
         <tbody>
           {% for obj in object_list %}
           <tr>
-            <td class="enroll-id">{{ obj.pk }}</td>
-            <td class="enroll-student">{{ obj.student.prospect|default:obj.student }}</td>
-            <td class="enroll-course">{{ obj.course.name|default:"-" }}</td>
-            <td class="enroll-session">{{ obj.session.start_date|date:"Y-m-d" }}</td>
-            <td class="enroll-invoice">
+            <td class="crm-cell-truncate"><a class="crm-id-link" href="{% url detail_url_name obj.pk %}">{{ obj.pk }}</a></td>
+            <td class="crm-cell-truncate"><a class="crm-record-link" href="{% url 'core:student-detail' obj.student.pk %}" title="{{ obj.student.prospect|default:obj.student }}">{{ obj.student.prospect|default:obj.student }}</a></td>
+            <td class="crm-cell-truncate"><span title="{{ obj.course.name|default:'-' }}">{{ obj.course.name|default:"-" }}</span></td>
+            <td class="crm-cell-truncate"><span>{{ obj.session.start_date|date:"Y-m-d" }}</span></td>
+            <td class="crm-cell-truncate">
               {% if obj.invoice %}
-                <a href="{% url 'core:invoice-detail' obj.invoice.pk %}" class="link-primary fw-semibold">
+                <a href="{% url 'core:invoice-detail' obj.invoice.pk %}" class="crm-record-link" title="{{ obj.invoice.invoice_number }}">
                   {{ obj.invoice.invoice_number }}
                 </a>
               {% else %}
@@ -87,15 +50,12 @@
               {% endif %}
             </td>
             <td>
-              <span class="enroll-chip">
-                {{ obj.get_status_display }}
-              
-              </span>
+              {% if obj.status == "active" or obj.status == "enrolled" or obj.status == "completed" %}<span class="crm-status-badge crm-status-badge--positive">{{ obj.get_status_display }}</span>{% elif obj.status == "withdrawn" %}<span class="crm-status-badge crm-status-badge--warning">{{ obj.get_status_display }}</span>{% elif obj.status == "cancelled" %}<span class="crm-status-badge crm-status-badge--danger">{{ obj.get_status_display }}</span>{% else %}<span class="crm-status-badge crm-status-badge--neutral">{{ obj.get_status_display }}</span>{% endif %}
             </td>
-            <td class="enroll-actions">
-              <div class="actions d-flex align-items-center gap-2" role="group">
-                <a class="btn btn-outline-primary" href="{% url detail_url_name obj.pk %}">View</a>
-                <a class="btn btn-outline-secondary" href="{% url update_url_name obj.pk %}">Edit</a>
+            <td class="crm-actions-cell">
+              <div class="crm-table-actions" role="group">
+                <a class="btn btn-outline-primary crm-action-btn" href="{% url detail_url_name obj.pk %}">View</a>
+                <a class="btn btn-outline-secondary crm-action-btn" href="{% url update_url_name obj.pk %}">Edit</a>
               </div>
             </td>
           </tr>
@@ -116,5 +76,7 @@
       </table>
     </div>
   </div>
+
+  {% if is_paginated %}<nav class="crm-list-pagination" aria-label="List pagination"><ul class="pagination justify-content-end">{% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a></li>{% else %}<li class="page-item disabled"><span class="page-link">Previous</span></li>{% endif %}<li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>{% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a></li>{% else %}<li class="page-item disabled"><span class="page-link">Next</span></li>{% endif %}</ul></nav>{% endif %}
 </div>
 {% endblock %}

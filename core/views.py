@@ -32,10 +32,12 @@ from django.views.generic import (
     View,
 )
 
+from .currency import format_currency
 from .forms import (
     StudentForm,
     StudentCreateForm,
     DisbursementReportingFilterForm,
+    GovernorCompensationFilterForm,
     CommunicationForm,
     EnrollmentForm,
     InquiryForm,
@@ -69,7 +71,6 @@ from .models import (
     RecipientType,
     Student,
     Teacher,
-    TeacherSpecialization,
     EnrollmentStatus,
 )
 from .services.prospect_pipeline import (
@@ -280,7 +281,6 @@ CRUD_MODELS = [
     Contact,
     Student,
     Teacher,
-    TeacherSpecialization,
     Location,
     Course,
     CourseSession,
@@ -294,6 +294,10 @@ CRUD_MODELS = [
 ]
 
 CRUD_MODEL_UI_OPTIONS = {
+    Contact: {
+        "allow_delete": False,
+        "allow_archive": False,
+    },
     Student: {
         "allow_delete": False,
         "allow_archive": True,
@@ -745,10 +749,19 @@ class TeacherEarningsDashboardView(ProductLoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        compensation = get_governor_compensation_data(user=self.request.user)
+        filter_form = GovernorCompensationFilterForm(
+            self.request.GET or None,
+            user=self.request.user,
+        )
+        filters = filter_form.cleaned_data if filter_form.is_valid() else {}
+        compensation = get_governor_compensation_data(
+            user=self.request.user,
+            filters=filters,
+        )
         if not compensation["can_view"]:
             raise PermissionDenied("Governor compensation is limited to Governors and administrators.")
         context.update(compensation)
+        context["filter_form"] = filter_form
         context["generated_on"] = timezone.localdate()
         return context
 
@@ -795,7 +808,6 @@ class CRUDContextMixin:
     model = None
     MODEL_UI_NAME_OVERRIDES = {
         Teacher: ("Governor", "Governors"),
-        TeacherSpecialization: ("Governor Specialization", "Governor Specializations"),
     }
 
     def _model_slug(self):
@@ -913,7 +925,6 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
             "qualification__icontains",
             "status__icontains",
         ],
-        TeacherSpecialization: ["name__icontains"],
         Location: [
             "name__icontains",
             "code__icontains",
@@ -1505,6 +1516,8 @@ class BaseDetailView(ProductLoginRequiredMixin, CRUDContextMixin, DetailView):
             value = getattr(obj, field.name)
             object_fields.append((field.verbose_name.title(), value))
         for field in obj._meta.many_to_many:
+            if self.model is Teacher and field.name == "specializations":
+                continue
             related_values = getattr(obj, field.name).all()
             display_value = ", ".join(str(item) for item in related_values) or "-"
             object_fields.append((field.verbose_name.title(), display_value))
@@ -1531,6 +1544,8 @@ class BaseCreateView(ProductLoginRequiredMixin, CRUDContextMixin, CreateView):
         form = super().get_form(form_class)
         if not self.request.user.is_superuser and "owner" in form.fields:
             form.fields.pop("owner")
+        if self.model is Teacher:
+            form.fields.pop("specializations", None)
         self._apply_governor_label_replacements(form)
         return form
 
@@ -1572,6 +1587,8 @@ class BaseUpdateView(ProductLoginRequiredMixin, CRUDContextMixin, UpdateView):
         form = super().get_form(form_class)
         if not self.request.user.is_superuser and "owner" in form.fields:
             form.fields.pop("owner")
+        if self.model is Teacher:
+            form.fields.pop("specializations", None)
         BaseCreateView._apply_governor_label_replacements(form)
         return form
 
@@ -2800,7 +2817,7 @@ class StudentDetailView(BaseDetailView):
         timeline_events = []
         for payment in recent_payments[:8]:
             payment_note_parts = [
-                f"{payment.get_payment_method_display()} · GHS {payment.amount_paid.quantize(Decimal('0.01'))}",
+                f"{payment.get_payment_method_display()} · {format_currency(payment.amount_paid)}",
                 f"Invoice {payment.invoice.invoice_number}",
             ]
             if payment.reference_number:

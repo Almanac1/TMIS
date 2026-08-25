@@ -10,6 +10,7 @@ from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
+from .currency import format_currency
 from .models import (
     CommunicationChannel,
     Communication,
@@ -20,6 +21,7 @@ from .models import (
     Enrollment,
     Course,
     CourseSession,
+    DisbursementStatus,
     Invoice,
     Inquiry,
     Payment,
@@ -274,12 +276,14 @@ class EnrollmentForm(forms.ModelForm):
     )
     session = forms.ModelChoiceField(queryset=CourseSession.objects.none())
     fee_amount = forms.DecimalField(
+        label="Fee amount (₦)",
         max_digits=10,
         decimal_places=2,
         min_value=Decimal("0.00"),
         widget=forms.NumberInput(attrs={"step": "0.01", "min": "0", "readonly": "readonly"}),
     )
     discount_amount = forms.DecimalField(
+        label="Discount amount (₦)",
         max_digits=10,
         decimal_places=2,
         min_value=Decimal("0.00"),
@@ -288,6 +292,7 @@ class EnrollmentForm(forms.ModelForm):
         widget=forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
     )
     balance_due = forms.DecimalField(
+        label="Balance due (₦)",
         max_digits=10,
         decimal_places=2,
         required=False,
@@ -613,6 +618,72 @@ class DisbursementReportingFilterForm(forms.Form):
         return cleaned
 
 
+class GovernorCompensationFilterForm(forms.Form):
+    FUNDING_CHOICES = (
+        ("", "All funding statuses"),
+        ("fully_funded", "Fully funded"),
+        ("partially_funded", "Partially funded"),
+        ("unfunded", "Unfunded"),
+    )
+    DISBURSEMENT_CHOICES = (
+        ("", "All disbursement statuses"),
+        ("none", "No disbursement record"),
+        *DisbursementStatus.choices,
+    )
+
+    start_date = forms.DateField(
+        required=False,
+        label="From",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    end_date = forms.DateField(
+        required=False,
+        label="To",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    teacher = forms.ModelChoiceField(
+        queryset=Teacher.objects.none(),
+        required=False,
+        label="Governor",
+        empty_label="All governors",
+    )
+    course = forms.ModelChoiceField(
+        queryset=Course.objects.order_by("name"),
+        required=False,
+        empty_label="All courses",
+    )
+    funding_status = forms.ChoiceField(
+        choices=FUNDING_CHOICES,
+        required=False,
+    )
+    disbursement_status = forms.ChoiceField(
+        choices=DISBURSEMENT_CHOICES,
+        required=False,
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        is_administrator = bool(user and (user.is_staff or user.is_superuser))
+        if is_administrator:
+            self.fields["teacher"].queryset = Teacher.objects.order_by(
+                "first_name", "last_name"
+            )
+        else:
+            self.fields.pop("teacher")
+
+        for field in self.fields.values():
+            current_class = field.widget.attrs.get("class", "")
+            field.widget.attrs["class"] = f"{current_class} form-control form-control-sm".strip()
+
+    def clean(self):
+        cleaned = super().clean()
+        start_date = cleaned.get("start_date")
+        end_date = cleaned.get("end_date")
+        if start_date and end_date and start_date > end_date:
+            raise forms.ValidationError("From date must be on or before To date.")
+        return cleaned
+
+
 class InvoicePaymentForm(forms.ModelForm):
     class Meta:
         model = Payment
@@ -630,6 +701,7 @@ class InvoicePaymentForm(forms.ModelForm):
             ),
             "notes": forms.Textarea(attrs={"rows": 3}),
         }
+        labels = {"amount_paid": "Amount paid (₦)"}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -663,6 +735,7 @@ class PaymentForm(forms.ModelForm):
             ),
             "notes": forms.Textarea(attrs={"rows": 3}),
         }
+        labels = {"amount_paid": "Amount paid (₦)"}
 
     @staticmethod
     def _open_invoice_queryset(*, user, student_id=None):
@@ -706,7 +779,8 @@ class PaymentForm(forms.ModelForm):
         outstanding = (invoice.outstanding_balance or Decimal("0.00")).quantize(Decimal("0.01"))
         return (
             f"{invoice.invoice_number} | {student_name} | {course_name} | "
-            f"Total GHS {total} | Paid GHS {paid} | Due GHS {outstanding}"
+            f"Total {format_currency(total)} | Paid {format_currency(paid)} | "
+            f"Due {format_currency(outstanding)}"
         )
 
     def __init__(self, *args, **kwargs):
@@ -864,7 +938,7 @@ class PaymentForm(forms.ModelForm):
             if amount_paid > outstanding:
                 self.add_error(
                     "amount_paid",
-                    f"Amount cannot exceed outstanding balance of GHS {outstanding.quantize(Decimal('0.01'))}.",
+                    f"Amount cannot exceed outstanding balance of {format_currency(outstanding)}.",
                 )
         return cleaned
 

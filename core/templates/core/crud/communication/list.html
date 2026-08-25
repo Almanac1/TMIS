@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="crud-list-shell">
+<div class="crud-list-shell crm-list-page">
   <div class="page-head">
     <h1 class="page-title">{{ model_name_plural }}</h1>
     <div class="page-actions">
@@ -15,11 +15,11 @@
     </div>
   </div>
 
-  <div class="search-card card shadow-sm mb-3">
-    <div class="card-body py-3 px-3 px-md-4">
+  <div class="search-card crm-search-panel card shadow-sm">
+    <div class="card-body">
       <form method="get">
-        <label for="list-search-input" class="search-label form-label mb-2">{{ search_label|default:"Search" }}</label>
-        <div class="search-row d-grid" style="grid-template-columns:minmax(0,1fr) auto auto;gap:.55rem;align-items:center;">
+        <label for="list-search-input" class="search-label form-label">{{ search_label|default:"Search" }}</label>
+        <div class="search-row">
           <input
             id="list-search-input"
             type="text"
@@ -32,7 +32,7 @@
           <a class="clear-link" href="{{ search_clear_url|default:request.path }}">Clear filters</a>
         </div>
 
-        <div class="mt-3 d-flex align-items-center gap-2">
+        <div class="crm-advanced-filter-toggle d-flex align-items-center gap-2">
           <button
             type="button"
             class="btn btn-outline-secondary btn-sm"
@@ -48,7 +48,7 @@
           {% endif %}
         </div>
 
-        <div class="collapse mt-3{% if communication_filter_values.status or communication_filter_values.assigned_user or communication_filter_values.channel or communication_filter_values.recipient_type or communication_filter_values.communication_type or communication_filter_values.course or communication_filter_values.created_from or communication_filter_values.created_to %} show{% endif %}" id="communication-advanced-filters">
+        <div class="collapse crm-advanced-filters{% if communication_filter_values.status or communication_filter_values.assigned_user or communication_filter_values.channel or communication_filter_values.recipient_type or communication_filter_values.communication_type or communication_filter_values.course or communication_filter_values.created_from or communication_filter_values.created_to %} show{% endif %}" id="communication-advanced-filters">
           <div class="row g-2">
             <div class="col-md-6 col-lg-4">
               <label for="communication-filter-status" class="form-label mb-1">Delivery Status</label>
@@ -121,21 +121,22 @@
   </div>
 
   <div id="communication-bulk-scope" data-recipient-kind="communication" data-communication-create-url="{% url 'core:communication-create' %}" data-total-matches="{% if is_paginated %}{{ page_obj.paginator.count }}{% else %}{{ object_list|length }}{% endif %}">
-  <div class="small text-muted mb-2">{% if is_paginated %}{{ page_obj.paginator.count }}{% else %}{{ object_list|length }}{% endif %} communications match this filter.</div>
+  <div class="crm-result-count">{% if is_paginated %}{{ page_obj.paginator.count }}{% else %}{{ object_list|length }}{% endif %} communications match this filter.</div>
   {% include "core/crud/partials/bulk_email_ui.html" with prefix="communication" entity_label="communications" %}
   <div class="table-card">
     <div class="table-responsive">
-      <table class="table table-striped table-hover mb-0 align-middle">
-        <thead class="table-light"><tr><th class="text-center" style="width:38px;"><input type="checkbox" class="form-check-input" data-bulk-select-all aria-label="Select displayed communications" title="Select displayed results"></th><th>ID</th><th>Name</th><th>Recipient Type</th><th>{{ model_name }}</th><th>Actions</th></tr></thead>
+      <table class="table table-striped table-hover align-middle crm-list-table crm-list-table--communications">
+        <colgroup><col class="crm-col-select"><col class="crm-col-id"><col class="crm-col-record"><col class="crm-col-type"><col class="crm-col-summary"><col class="crm-col-actions"></colgroup>
+        <thead class="table-light"><tr><th class="text-center"><input type="checkbox" class="form-check-input" data-bulk-select-all aria-label="Select displayed communications" title="Select displayed results"></th><th>ID</th><th>Name</th><th>Recipient Type</th><th>{{ model_name }}</th><th>Actions</th></tr></thead>
         <tbody>
           {% for obj in object_list %}
           <tr>
             <td class="text-center"><input type="checkbox" class="form-check-input" data-bulk-row-select value="{{ obj.pk }}" aria-label="Select communication {{ obj.pk }}"></td>
-            <td class="text-nowrap">{{ obj.pk }}</td>
-            <td>{% if obj.student %}<a href="{% url 'core:student-detail' obj.student.pk %}" class="link-primary">{{ obj.student.prospect|default:obj.student }}</a>{% elif obj.prospect %}<a href="{% url 'core:prospect-detail' obj.prospect.pk %}" class="link-primary">{{ obj.prospect }}</a>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+            <td class="crm-cell-truncate"><a class="crm-id-link" href="{% url detail_url_name obj.pk %}">{{ obj.pk }}</a></td>
+            <td class="crm-cell-truncate">{% if obj.student %}<a href="{% url 'core:student-detail' obj.student.pk %}" class="crm-record-link" title="{{ obj.student.prospect|default:obj.student }}">{{ obj.student.prospect|default:obj.student }}</a>{% elif obj.prospect %}<a href="{% url 'core:prospect-detail' obj.prospect.pk %}" class="crm-record-link" title="{{ obj.prospect }}">{{ obj.prospect }}</a>{% else %}<span class="text-muted">-</span>{% endif %}</td>
             <td>{{ obj.get_recipient_type_display|default:"-" }}</td>
-            <td>{{ obj }}</td>
-            <td><div class="actions" role="group"><a class="btn btn-outline-primary" href="{% url detail_url_name obj.pk %}">View</a><a class="btn btn-outline-secondary" href="{% url update_url_name obj.pk %}">Edit</a>{% if can_delete %}<a class="btn btn-outline-danger" href="{% url delete_url_name obj.pk %}">Delete</a>{% endif %}</div></td>
+            <td class="crm-cell-truncate"><span title="{{ obj }}">{{ obj }}</span></td>
+            <td class="crm-actions-cell"><div class="crm-table-actions" role="group"><a class="btn btn-outline-primary crm-action-btn" href="{% url detail_url_name obj.pk %}">View</a><a class="btn btn-outline-secondary crm-action-btn" href="{% url update_url_name obj.pk %}">Edit</a>{% if can_delete %}<a class="btn btn-outline-danger crm-action-btn" href="{% url delete_url_name obj.pk %}">Delete</a>{% endif %}</div></td>
           </tr>
           {% empty %}
           <tr><td colspan="6" class="empty-state"><strong>{% if search_query %}No communications found for this search.{% else %}No records found.{% endif %}</strong></td></tr>
@@ -146,22 +147,8 @@
   </div>
   </div>
 
-  {% if is_paginated %}<nav class="mt-3" aria-label="List pagination"><ul class="pagination justify-content-end">{% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a></li>{% else %}<li class="page-item disabled"><span class="page-link">Previous</span></li>{% endif %}<li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>{% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a></li>{% else %}<li class="page-item disabled"><span class="page-link">Next</span></li>{% endif %}</ul></nav>{% endif %}
+  {% if is_paginated %}<nav class="crm-list-pagination" aria-label="List pagination"><ul class="pagination justify-content-end">{% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a></li>{% else %}<li class="page-item disabled"><span class="page-link">Previous</span></li>{% endif %}<li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>{% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a></li>{% else %}<li class="page-item disabled"><span class="page-link">Next</span></li>{% endif %}</ul></nav>{% endif %}
 </div>
-{% endblock %}
-
-{% block extra_css %}
-<style>
-  .bulk-email-toolbar {
-    top: 0.4rem;
-    z-index: 5;
-    background: #fff;
-    border: 1px solid var(--crm-border);
-    border-radius: 10px;
-    padding: 0.55rem 0.7rem;
-    box-shadow: 0 2px 8px rgba(20, 24, 36, 0.06);
-  }
-</style>
 {% endblock %}
 
 {% block extra_js %}

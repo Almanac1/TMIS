@@ -137,11 +137,18 @@
       return Number.isFinite(n) ? n : 0;
     }
 
+    function formatNaira(value) {
+      return `₦${parseMoney(value).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
+    }
+
     function updateSummary(courseFee, discount, childrenFee, balance, isFamily) {
-      summaryCourseFee.textContent = `GHS ${courseFee.toFixed(2)}`;
-      summaryDiscount.textContent = `GHS ${discount.toFixed(2)}`;
-      summaryChildrenFee.textContent = `GHS ${childrenFee.toFixed(2)}`;
-      summaryBalance.textContent = `GHS ${balance.toFixed(2)}`;
+      summaryCourseFee.textContent = formatNaira(courseFee);
+      summaryDiscount.textContent = formatNaira(discount);
+      summaryChildrenFee.textContent = formatNaira(childrenFee);
+      summaryBalance.textContent = formatNaira(balance);
       summaryChildrenRow.classList.toggle("d-none", !isFamily);
     }
 
@@ -240,7 +247,7 @@
       const code = payload.course_code || "-";
       const fee = payload.standard_fee || "0.00";
       const extra = payload.additional_cost_description || "No additional cost notes.";
-      coursePreview.innerHTML = `<strong>Code:</strong> ${code} &nbsp;|&nbsp; <strong>Base fee:</strong> GHS ${fee} <br><span class="text-muted">${extra}</span>`;
+      coursePreview.innerHTML = `<strong>Code:</strong> ${code} &nbsp;|&nbsp; <strong>Base fee:</strong> ${formatNaira(fee)} <br><span class="text-muted">${extra}</span>`;
       feeInput.value = payload.standard_fee || "0.00";
       if (courseCode === "TMF" || courseCode === "TMFM" || courseName.includes("family")) {
         childrenWrap.classList.remove("d-none");

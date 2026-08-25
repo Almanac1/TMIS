@@ -74,18 +74,41 @@ def _draw_tm_logo_from_static_svg(canvas_obj, *, logo_svg_path: Path, left_margi
 def build_invoice_pdf(*, invoice, participant, logo_svg_path: Path) -> bytes:
     try:
         from reportlab.lib import colors
-        from reportlab.lib.enums import TA_RIGHT
         from reportlab.lib.pagesizes import LETTER
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import inch
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        from reportlab.platypus import Flowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
     except ModuleNotFoundError as exc:
         raise RuntimeError(
             "PDF generation dependency missing: reportlab is not installed in this Python environment."
         ) from exc
 
-    def fmt_money(value) -> str:
-        return f"GHS {value:.2f}"
+    class NairaAmount(Flowable):
+        """Right-aligned money flowable with a font-independent Naira mark."""
+
+        def __init__(self, value, *, bold=False, negative=False):
+            super().__init__()
+            self.font_name = "Helvetica-Bold" if bold else "Helvetica"
+            self.font_size = 9.8
+            self.text = f"{'-' if negative else ''}N{value:,.2f}"
+            self.naira_x = stringWidth("-", self.font_name, self.font_size) if negative else 0
+            self.width = stringWidth(self.text, self.font_name, self.font_size)
+            self.height = 12
+            self.hAlign = "RIGHT"
+
+        def wrap(self, available_width, available_height):
+            return self.width, self.height
+
+        def draw(self):
+            self.canv.setFillColor(colors.HexColor("#1f2937"))
+            self.canv.setStrokeColor(colors.HexColor("#1f2937"))
+            self.canv.setFont(self.font_name, self.font_size)
+            self.canv.drawString(0, 1.5, self.text)
+            n_width = stringWidth("N", self.font_name, self.font_size)
+            self.canv.setLineWidth(0.55)
+            for y in (5.0, 6.8):
+                self.canv.line(self.naira_x - 0.2, y, self.naira_x + n_width + 0.2, y)
 
     created_dt = timezone.localtime(invoice.created_at)
     donation_date = created_dt.strftime("%b %d, %Y")
@@ -153,11 +176,6 @@ def build_invoice_pdf(*, invoice, participant, logo_svg_path: Path) -> bytes:
         fontSize=10.2,
         leading=13.5,
         textColor=colors.HexColor("#111827"),
-    )
-    right_value = ParagraphStyle(
-        "RightValue",
-        parent=normal,
-        alignment=TA_RIGHT,
     )
     terms_style = ParagraphStyle(
         "TermsStyle",
@@ -247,9 +265,9 @@ def build_invoice_pdf(*, invoice, participant, logo_svg_path: Path) -> bytes:
             ["Course Donation", "Donation", "Discount", "Outstanding Donation"],
             [
                 Paragraph(course_name, normal),
-                Paragraph(fmt_money(suggested_donation), right_value),
-                Paragraph(f"-{fmt_money(discount)}", right_value),
-                Paragraph(fmt_money(outstanding_donation), right_value),
+                NairaAmount(suggested_donation),
+                NairaAmount(discount, negative=True),
+                NairaAmount(outstanding_donation),
             ],
         ],
         colWidths=[2.85 * inch, 1.2 * inch, 1.05 * inch, 1.4 * inch],
@@ -282,9 +300,9 @@ def build_invoice_pdf(*, invoice, participant, logo_svg_path: Path) -> bytes:
     # Summary box on right
     summary_table = Table(
         [
-            [Paragraph("Course Donation", small_muted), Paragraph(fmt_money(suggested_donation), right_value)],
-            [Paragraph("Discount", small_muted), Paragraph(f"-{fmt_money(discount)}", right_value)],
-            [Paragraph("Outstanding Donation", section_title), Paragraph(f"<b>{fmt_money(outstanding_donation)}</b>", right_value)],
+            [Paragraph("Course Donation", small_muted), NairaAmount(suggested_donation)],
+            [Paragraph("Discount", small_muted), NairaAmount(discount, negative=True)],
+            [Paragraph("Outstanding Donation", section_title), NairaAmount(outstanding_donation, bold=True)],
         ],
         colWidths=[2.15 * inch, 1.45 * inch],
     )

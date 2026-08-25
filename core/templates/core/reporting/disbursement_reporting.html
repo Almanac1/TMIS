@@ -1,5 +1,5 @@
 {% extends "core/crud/base.html" %}
-{% load crispy_forms_tags %}
+{% load crispy_forms_tags currency %}
 
 {% block title %}Disbursement Reporting{% endblock %}
 
@@ -46,7 +46,7 @@
       <div class="card border-primary">
         <div class="card-body">
           <div class="text-muted small">Total Disbursed Amount</div>
-          <div class="h4 mb-0">{{ report.total_amount }}</div>
+          <div class="h4 mb-0">{{ report.total_amount|naira }}</div>
           <div class="small text-muted mt-2">
             Mode: {{ report.report_by|title }} | {{ report.start_date }} to {{ report.end_date }}
           </div>
@@ -98,7 +98,7 @@
               <td>{{ row.enrollment__session__session_name|default:"Unnamed Session" }}</td>
               <td>{{ row.status }}</td>
               <td>{{ row.disbursement_count }}</td>
-              <td>{{ row.row_total }}</td>
+              <td>{{ row.row_total|naira }}</td>
             </tr>
           {% empty %}
             <tr>

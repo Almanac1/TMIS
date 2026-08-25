@@ -1,4 +1,5 @@
 {% extends "core/crud/base.html" %}
+{% load currency %}
 
 {% block title %}Student Profile · {{ object.prospect|default:object }}{% endblock %}
 {% block breadcrumb_current %}
@@ -94,11 +95,11 @@
       </article>
       <article class="sp-metric-card">
         <p class="sp-metric-label">Total Amount Paid</p>
-        <p class="sp-metric-value">GHS {{ student_metrics.total_amount_paid|floatformat:2 }}</p>
+        <p class="sp-metric-value">{{ student_metrics.total_amount_paid|naira }}</p>
       </article>
       <article class="sp-metric-card sp-metric-card-alert">
         <p class="sp-metric-label">Outstanding Balance</p>
-        <p class="sp-metric-value sp-text-warning">GHS {{ student_metrics.outstanding_balance|floatformat:2 }}</p>
+        <p class="sp-metric-value sp-text-warning">{{ student_metrics.outstanding_balance|naira }}</p>
       </article>
       <article class="sp-metric-card">
         <p class="sp-metric-label">Assigned Governors</p>
@@ -176,13 +177,13 @@
                       </a>
                     </td>
                     <td>{{ invoice.issue_date|date:"M d, Y" }}</td>
-                    <td>GHS {{ invoice.amount_paid|floatformat:2 }}</td>
+                    <td>{{ invoice.amount_paid|naira }}</td>
                     <td>
                       <span class="sp-chip {% if invoice.calculated_balance_due > 0 and invoice.due_date and invoice.due_date < today %}sp-chip-overdue{% elif invoice.calculated_balance_due > 0 %}sp-chip-partial{% endif %}">
                         {{ invoice.computed_payment_status }}
                       </span>
                     </td>
-                    <td>GHS {{ invoice.calculated_balance_due|floatformat:2 }}</td>
+                    <td>{{ invoice.calculated_balance_due|naira }}</td>
                   </tr>
                 {% endfor %}
               {% else %}
