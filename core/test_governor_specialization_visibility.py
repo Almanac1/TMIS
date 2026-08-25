@@ -39,3 +39,16 @@ class GovernorSpecializationVisibilityTests(TestCase):
         self.assertNotIn("specializations", create_response.context["form"].fields)
         self.assertNotIn("specializations", update_response.context["form"].fields)
         self.assertNotContains(detail_response, "Specializations")
+
+    def test_governor_detail_uses_profile_card_layout(self):
+        response = self.client.get(
+            reverse("core:teacher-detail", kwargs={"pk": self.teacher.pk})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="governor-record-header"')
+        self.assertContains(response, 'class="row g-4 governor-record-grid"')
+        self.assertContains(response, "Governor Profile")
+        self.assertContains(response, "Contact")
+        self.assertContains(response, "Edit Governor")
+        self.assertContains(response, "Back to Governors")

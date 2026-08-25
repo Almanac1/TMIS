@@ -12,10 +12,18 @@
       <h1 class="page-title">{{ model_name_plural }}</h1>
       {% if model_slug == "contact" %}
         <p class="page-subtitle mb-0">Find and manage contacts quickly by name, ID, email, or phone.</p>
+      {% elif model_slug == "location" %}
+        <p class="page-subtitle mb-0">View CRM locations. New locations and removals are managed by administrators.</p>
       {% endif %}
     </div>
     <div class="page-actions">
-      <a class="btn btn-primary" href="{% url create_url_name %}">Create {{ model_name }}</a>
+      {% if can_create %}
+        <a class="btn btn-primary" href="{% url create_url_name %}">Create {{ model_name }}</a>
+      {% elif manage_in_admin and request.user.is_staff %}
+        <a class="btn btn-primary" href="{% url 'admin:core_location_changelist' %}">
+          <i class="bi bi-shield-lock me-1" aria-hidden="true"></i>Manage Locations
+        </a>
+      {% endif %}
       <a class="btn btn-outline-secondary" href="{% url 'core:home' %}">All Models</a>
     </div>
   </div>

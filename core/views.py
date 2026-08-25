@@ -307,13 +307,20 @@ CRUD_MODEL_UI_OPTIONS = {
         "allow_delete": False,
         "allow_archive": True,
     },
+    Location: {
+        "allow_create": False,
+        "allow_delete": False,
+        "manage_in_admin": True,
+    },
 }
 
 
 def get_model_ui_options(model):
     return {
+        "allow_create": True,
         "allow_delete": True,
         "allow_archive": False,
+        "manage_in_admin": False,
         **CRUD_MODEL_UI_OPTIONS.get(model, {}),
     }
 
@@ -874,8 +881,10 @@ class CRUDContextMixin:
                 "update_url_name": f"core:{slug}-update",
                 "delete_url_name": f"core:{slug}-delete",
                 "archive_url_name": f"core:{slug}-archive",
+                "can_create": ui_options["allow_create"],
                 "can_delete": ui_options["allow_delete"],
                 "can_archive": ui_options["allow_archive"],
+                "manage_in_admin": ui_options["manage_in_admin"],
             }
         )
         return context

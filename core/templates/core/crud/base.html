@@ -1143,6 +1143,10 @@
                   <i class="bi bi-shield-lock" aria-hidden="true"></i>
                   Admin panel
                 </a>
+                <a class="dropdown-item" href="{% url 'admin:core_location_changelist' %}">
+                  <i class="bi bi-geo-alt" aria-hidden="true"></i>
+                  Manage locations
+                </a>
               {% endif %}
               <div class="dropdown-divider"></div>
               <form class="account-logout-form" method="post" action="{% url 'logout' %}">

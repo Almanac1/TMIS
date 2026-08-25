@@ -151,22 +151,29 @@ for model in views.CRUD_MODELS:
             getattr(views, f"{model_name}ListView").as_view(),
             name=f"{slug}-list",
         ),
-        path(
-            f"{collection}/create/",
-            getattr(views, f"{model_name}CreateView").as_view(),
-            name=f"{slug}-create",
-        ),
-        path(
-            f"{collection}/<str:pk>/",
-            getattr(views, f"{model_name}DetailView").as_view(),
-            name=f"{slug}-detail",
-        ),
-        path(
-            f"{collection}/<str:pk>/edit/",
-            getattr(views, f"{model_name}UpdateView").as_view(),
-            name=f"{slug}-update",
-        ),
     ]
+    if model_ui_options["allow_create"]:
+        model_patterns.append(
+            path(
+                f"{collection}/create/",
+                getattr(views, f"{model_name}CreateView").as_view(),
+                name=f"{slug}-create",
+            )
+        )
+    model_patterns.extend(
+        [
+            path(
+                f"{collection}/<str:pk>/",
+                getattr(views, f"{model_name}DetailView").as_view(),
+                name=f"{slug}-detail",
+            ),
+            path(
+                f"{collection}/<str:pk>/edit/",
+                getattr(views, f"{model_name}UpdateView").as_view(),
+                name=f"{slug}-update",
+            ),
+        ]
+    )
     if model_ui_options["allow_delete"]:
         model_patterns.append(
             path(
