@@ -15,7 +15,7 @@ from django.core.mail import EmailMessage
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
-from django.db.models.functions import Coalesce, Concat
+from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse, JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
@@ -74,6 +74,7 @@ from .models import (
     Teacher,
     EnrollmentStatus,
 )
+from .search import build_tokenized_search_query
 from .services.prospect_pipeline import (
     convert_prospect_to_student_for_pipeline,
     get_pipeline_status_breakdown,
@@ -383,43 +384,25 @@ class MeditatorListView(ProductLoginRequiredMixin, ListView):
 
         query = (self.request.GET.get("q") or "").strip()
         if query:
-            terms = [part for part in query.split() if part]
-            if terms:
-                queryset = queryset.annotate(
-                    search_full_name=Concat(
-                        F("student__prospect__contact__first_name"),
-                        Value(" "),
-                        F("student__prospect__contact__last_name"),
-                    )
-                )
-                token_lookups = [
-                    "crm_reference__icontains",
-                    "student__crm_reference__icontains",
-                    "student__prospect__crm_reference__icontains",
-                    "student__prospect__contact__crm_reference__icontains",
-                    "search_full_name__icontains",
-                    "student__prospect__contact__first_name__icontains",
-                    "student__prospect__contact__last_name__icontains",
-                    "student__prospect__contact__email__icontains",
-                    "student__prospect__contact__phone_number__icontains",
-                    "student__teacher__first_name__icontains",
-                    "student__teacher__last_name__icontains",
-                    "student__enrollment_status__icontains",
-                    "student__owner__username__icontains",
-                    "student__owner__email__icontains",
-                ]
-                combined = Q()
-                for term in terms:
-                    per_term = Q()
-                    for lookup in token_lookups:
-                        per_term |= Q(**{lookup: term})
-                    if term.isdigit():
-                        per_term |= Q(pk=int(term)) | Q(student__pk=int(term))
-                    combined &= per_term
-                phrase = Q(search_full_name__icontains=query)
-                if query.isdigit():
-                    phrase |= Q(pk=int(query)) | Q(student__pk=int(query))
-                queryset = queryset.filter(combined | phrase)
+            lookups = [
+                "crm_reference__icontains",
+                "student__crm_reference__icontains",
+                "student__prospect__crm_reference__icontains",
+                "student__prospect__contact__crm_reference__icontains",
+                "student__prospect__contact__first_name__icontains",
+                "student__prospect__contact__last_name__icontains",
+                "student__prospect__contact__email__icontains",
+                "student__prospect__contact__phone_number__icontains",
+                "student__teacher__first_name__icontains",
+                "student__teacher__last_name__icontains",
+                "student__enrollment_status__icontains",
+                "student__owner__username__icontains",
+                "student__owner__email__icontains",
+            ]
+            filters = build_tokenized_search_query(query, lookups)
+            if query.isdigit():
+                filters |= Q(pk=int(query)) | Q(student__pk=int(query))
+            queryset = queryset.filter(filters)
 
         return queryset.distinct()
 
@@ -926,6 +909,12 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
             "enrollment_status__icontains",
             "teacher__first_name__icontains",
             "teacher__last_name__icontains",
+            "owner__username__icontains",
+            "owner__email__icontains",
+            "owner__first_name__icontains",
+            "owner__last_name__icontains",
+            "prospect__status__icontains",
+            "prospect__source__icontains",
         ],
         Teacher: [
             "first_name__icontains",
@@ -1034,37 +1023,13 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
         if not query:
             return queryset
 
-        if self.model is Inquiry:
-            tokens = [part for part in query.split() if part]
-            queryset = queryset.annotate(
-                search_contact_full_name=Concat(
-                    F("contact__first_name"),
-                    Value(" "),
-                    F("contact__last_name"),
-                )
-            )
-            token_lookups = [
-                "inquiry_number__icontains",
-                "search_contact_full_name__icontains",
-                "contact__first_name__icontains",
-                "contact__last_name__icontains",
-                "contact__email__icontains",
-                "contact__phone_number__icontains",
-                "status__icontains",
-                "channel__icontains",
-                "subject__icontains",
-                "message__icontains",
-            ]
-            combined = Q()
-            for token in tokens:
-                per_token = Q()
-                for lookup in token_lookups:
-                    per_token |= Q(**{lookup: token})
-                combined &= per_token
+        filters = build_tokenized_search_query(
+            query,
+            self.SEARCH_CONFIG.get(self.model, []),
+        )
 
-            phrase_filters = Q(inquiry_number__iexact=query) | Q(
-                search_contact_full_name__icontains=query
-            )
+        if self.model is Inquiry:
+            phrase_filters = Q(inquiry_number__iexact=query)
             normalized = query.replace("-", "").lower()
             if len(normalized) >= 4 and all(
                 character in "0123456789abcdef" for character in normalized
@@ -1072,65 +1037,17 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
                 phrase_filters |= Q(uuid__startswith=normalized)
             if query.isdigit():
                 phrase_filters |= Q(legacy_int_id=int(query))
-            return queryset.filter(combined | phrase_filters).distinct()
-
-        if self.model is Student:
-            tokens = [part for part in query.split() if part]
-            if not tokens:
-                return queryset
-
-            queryset = queryset.annotate(
-                search_full_name=Concat(
-                    F("prospect__contact__first_name"),
-                    Value(" "),
-                    F("prospect__contact__last_name"),
-                )
-            )
-            token_lookups = [
-                "crm_reference__icontains",
-                "search_full_name__icontains",
-                "prospect__contact__first_name__icontains",
-                "prospect__contact__last_name__icontains",
-                "prospect__contact__email__icontains",
-                "prospect__contact__phone_number__icontains",
-                "enrollment_status__icontains",
-                "teacher__first_name__icontains",
-                "teacher__last_name__icontains",
-                "owner__username__icontains",
-                "owner__email__icontains",
-                "owner__first_name__icontains",
-                "owner__last_name__icontains",
-                "prospect__status__icontains",
-                "prospect__source__icontains",
-            ]
-            combined = Q()
-            for token in tokens:
-                per_token = Q()
-                for lookup in token_lookups:
-                    per_token |= Q(**{lookup: token})
-                if token.isdigit():
-                    per_token |= Q(pk=int(token))
-                combined &= per_token
-
-            # Also allow single-field phrase search for quoted/long inputs.
-            phrase_filters = Q(search_full_name__icontains=query)
-            if query.isdigit():
-                phrase_filters |= Q(pk=int(query))
-
-            return queryset.filter(combined | phrase_filters).distinct()
+            filters |= phrase_filters
 
         if self.model is Contact and query.isdigit():
             id_match = queryset.filter(pk=int(query))
             if id_match.exists():
                 return id_match
 
-        filters = Q()
-        for lookup in self.SEARCH_CONFIG.get(self.model, []):
-            filters |= Q(**{lookup: query})
         if query.isdigit():
             filters |= Q(pk=int(query))
         if filters:
-            return queryset.filter(filters)
+            return queryset.filter(filters).distinct()
         return queryset
 
     def _apply_student_filters(self, queryset):
@@ -2235,22 +2152,19 @@ class PaymentStudentSearchView(ProductLoginRequiredMixin, View):
                 user=request.user,
             )
             .filter(pk__in=open_invoice_student_ids)
-            .annotate(
-                search_full_name=Concat(
-                    "prospect__contact__first_name",
-                    Value(" "),
-                    "prospect__contact__last_name",
-                )
-            )
             .filter(
-                Q(crm_reference__icontains=query)
-                | Q(prospect__crm_reference__icontains=query)
-                | Q(prospect__contact__crm_reference__icontains=query)
-                | Q(search_full_name__icontains=query)
-                | Q(prospect__contact__first_name__icontains=query)
-                | Q(prospect__contact__last_name__icontains=query)
-                | Q(prospect__contact__email__icontains=query)
-                | Q(prospect__contact__phone_number__icontains=query)
+                build_tokenized_search_query(
+                    query,
+                    [
+                        "crm_reference__icontains",
+                        "prospect__crm_reference__icontains",
+                        "prospect__contact__crm_reference__icontains",
+                        "prospect__contact__first_name__icontains",
+                        "prospect__contact__last_name__icontains",
+                        "prospect__contact__email__icontains",
+                        "prospect__contact__phone_number__icontains",
+                    ],
+                )
             )
             .order_by(
                 "prospect__contact__first_name",
@@ -2337,21 +2251,19 @@ class EnrollmentPersonSearchView(ProductLoginRequiredMixin, View):
                 queryset=Student.objects.select_related("prospect__contact"),
                 model=Student,
                 user=request.user,
-            ).annotate(
-                search_full_name=Concat(
-                    "prospect__contact__first_name",
-                    Value(" "),
-                    "prospect__contact__last_name",
-                )
             ).filter(
-                Q(crm_reference__icontains=query)
-                | Q(prospect__crm_reference__icontains=query)
-                | Q(prospect__contact__crm_reference__icontains=query)
-                | Q(search_full_name__icontains=query)
-                | Q(prospect__contact__first_name__icontains=query)
-                | Q(prospect__contact__last_name__icontains=query)
-                | Q(prospect__contact__email__icontains=query)
-                | Q(prospect__contact__phone_number__icontains=query)
+                build_tokenized_search_query(
+                    query,
+                    [
+                        "crm_reference__icontains",
+                        "prospect__crm_reference__icontains",
+                        "prospect__contact__crm_reference__icontains",
+                        "prospect__contact__first_name__icontains",
+                        "prospect__contact__last_name__icontains",
+                        "prospect__contact__email__icontains",
+                        "prospect__contact__phone_number__icontains",
+                    ],
+                )
             ).order_by(
                 "prospect__contact__first_name",
                 "prospect__contact__last_name",
@@ -2387,12 +2299,17 @@ class EnrollmentPersonSearchView(ProductLoginRequiredMixin, View):
                 model=Prospect,
                 user=request.user,
             ).filter(is_archived=False).filter(
-                Q(crm_reference__icontains=query)
-                | Q(contact__crm_reference__icontains=query)
-                | Q(contact__first_name__icontains=query)
-                | Q(contact__last_name__icontains=query)
-                | Q(contact__email__icontains=query)
-                | Q(contact__phone_number__icontains=query)
+                build_tokenized_search_query(
+                    query,
+                    [
+                        "crm_reference__icontains",
+                        "contact__crm_reference__icontains",
+                        "contact__first_name__icontains",
+                        "contact__last_name__icontains",
+                        "contact__email__icontains",
+                        "contact__phone_number__icontains",
+                    ],
+                )
             )[: self.PAGE_SIZE]
             results = [
                 {
@@ -2411,11 +2328,16 @@ class EnrollmentPersonSearchView(ProductLoginRequiredMixin, View):
                 model=Contact,
                 user=request.user,
             ).filter(
-                Q(crm_reference__icontains=query)
-                | Q(first_name__icontains=query)
-                | Q(last_name__icontains=query)
-                | Q(email__icontains=query)
-                | Q(phone_number__icontains=query)
+                build_tokenized_search_query(
+                    query,
+                    [
+                        "crm_reference__icontains",
+                        "first_name__icontains",
+                        "last_name__icontains",
+                        "email__icontains",
+                        "phone_number__icontains",
+                    ],
+                )
             )[: self.PAGE_SIZE]
             results = [
                 {
@@ -2444,11 +2366,16 @@ class ContactAutocompleteView(ProductLoginRequiredMixin, View):
             model=Contact,
             user=request.user,
         ).filter(
-            Q(crm_reference__icontains=query)
-            | Q(first_name__icontains=query)
-            | Q(last_name__icontains=query)
-            | Q(email__icontains=query)
-            | Q(phone_number__icontains=query)
+            build_tokenized_search_query(
+                query,
+                [
+                    "crm_reference__icontains",
+                    "first_name__icontains",
+                    "last_name__icontains",
+                    "email__icontains",
+                    "phone_number__icontains",
+                ],
+            )
         ).order_by("first_name", "last_name")[: self.PAGE_SIZE]
 
         return JsonResponse(
@@ -2479,23 +2406,20 @@ class InquiryAutocompleteView(ProductLoginRequiredMixin, View):
             queryset=Inquiry.objects.filter(is_archived=False).select_related("contact"),
             model=Inquiry,
             user=request.user,
-        ).annotate(
-            search_contact_full_name=Concat(
-                F("contact__first_name"),
-                Value(" "),
-                F("contact__last_name"),
-            )
         )
-        combined = Q()
-        for token in [part for part in query.split() if part]:
-            combined &= (
-                Q(inquiry_number__icontains=token)
-                | Q(search_contact_full_name__icontains=token)
-                | Q(contact__email__icontains=token)
-                | Q(contact__phone_number__icontains=token)
-                | Q(subject__icontains=token)
+        inquiries = inquiries.filter(
+            build_tokenized_search_query(
+                query,
+                [
+                    "inquiry_number__icontains",
+                    "contact__first_name__icontains",
+                    "contact__last_name__icontains",
+                    "contact__email__icontains",
+                    "contact__phone_number__icontains",
+                    "subject__icontains",
+                ],
             )
-        inquiries = inquiries.filter(combined).order_by("-inquiry_date")[: self.PAGE_SIZE]
+        ).order_by("-inquiry_date")[: self.PAGE_SIZE]
 
         return JsonResponse(
             {

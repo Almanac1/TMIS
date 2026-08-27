@@ -247,6 +247,14 @@ class ContactListSearchTests(TestCase):
         object_list = list(response.context["object_list"])
         self.assertEqual(object_list, [self.amara])
 
+    def test_contact_list_search_filters_by_full_name(self):
+        response = self.client.get(
+            reverse("core:contact-list"),
+            {"q": "Amara Anderson"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["object_list"]), [self.amara])
+
     def test_contact_list_search_filters_by_id(self):
         response = self.client.get(reverse("core:contact-list"), {"q": str(self.other.pk)})
         self.assertEqual(response.status_code, 200)
@@ -1397,6 +1405,14 @@ class ContactAutocompleteEndpointTests(TestCase):
         self.assertIn("name", row)
         self.assertIn("email", row)
         self.assertIn("phone", row)
+
+    def test_contact_autocomplete_matches_full_name(self):
+        response = self.client.get(
+            reverse("core:contact-autocomplete"),
+            {"q": "Amara Anderson"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["results"]), 1)
 
     def test_existing_contact_mode_requires_selected_contact(self):
         response = self.client.post(

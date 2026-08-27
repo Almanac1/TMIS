@@ -11,6 +11,7 @@ from core.models import (
     ProspectStatus,
     RecipientType,
 )
+from core.search import build_tokenized_search_query
 from core.services.prospect_conversion import get_prospect_conversion_eligibility
 from core.services.reporting_counts import count_unique_people
 
@@ -50,11 +51,16 @@ def get_prospect_pipeline_queryset(
 
     if q:
         queryset = queryset.filter(
-            Q(contact__first_name__icontains=q)
-            | Q(contact__last_name__icontains=q)
-            | Q(contact__email__icontains=q)
-            | Q(contact__phone_number__icontains=q)
-            | Q(source__icontains=q)
+            build_tokenized_search_query(
+                q,
+                [
+                    "contact__first_name__icontains",
+                    "contact__last_name__icontains",
+                    "contact__email__icontains",
+                    "contact__phone_number__icontains",
+                    "source__icontains",
+                ],
+            )
         )
 
     if status:
