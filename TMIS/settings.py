@@ -65,6 +65,8 @@ ALLOWED_HOSTS = [
     for host in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
     if host.strip()
 ]
+if "crmthingy.pythonanywhere.com" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append("crmthingy.pythonanywhere.com")
 
 
 # Application definition
