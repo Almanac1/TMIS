@@ -31,7 +31,7 @@
 
   <div class="search-card crm-search-panel card shadow-sm">
     <div class="card-body">
-      <form method="get">
+      <form method="get" class="js-list-search-form" data-clear-url="{{ search_clear_url|default:request.path }}">
         {% if prospect_state_filter %}
           <input type="hidden" name="state" value="{{ prospect_state_filter }}">
         {% endif %}
@@ -46,7 +46,7 @@
             placeholder="{{ search_placeholder|default:'Search records' }}"
           >
           <button type="submit" class="btn btn-primary search-btn">Search</button>
-          <a class="clear-link" href="{{ search_clear_url|default:request.path }}{% if prospect_state_filter %}?state={{ prospect_state_filter }}{% endif %}">Clear filters</a>
+          <a class="clear-link" href="{{ search_clear_url|default:request.path }}">Clear filters</a>
         </div>
 
         <div class="crm-advanced-filter-toggle d-flex align-items-center gap-2">

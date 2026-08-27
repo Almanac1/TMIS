@@ -14,8 +14,9 @@
 <div class="card shadow-sm mb-3">
   <div class="card-body">
     <form id="pipeline-filter-form"
-          class="row g-3"
+          class="row g-3 js-list-search-form"
           method="get"
+          data-clear-url="{% url 'core:prospect-pipeline-list' %}"
           hx-get="{% url 'core:prospect-pipeline-list' %}"
           hx-target="#pipeline-table"
           hx-push-url="true">
@@ -36,7 +37,7 @@
       </div>
       <div class="col-12 d-flex gap-2">
         <button class="btn btn-primary" type="submit">Apply Filters</button>
-        <a class="btn btn-outline-secondary" href="{% url 'core:prospect-pipeline-list' %}">Reset</a>
+        <a class="btn btn-outline-secondary" href="{% url 'core:prospect-pipeline-list' %}">Clear filters</a>
       </div>
     </form>
   </div>

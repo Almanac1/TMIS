@@ -424,6 +424,8 @@ class MeditatorListView(ProductLoginRequiredMixin, ListView):
         context["search_query"] = (self.request.GET.get("q") or "").strip()
         params = self.request.GET.copy()
         params.pop("page", None)
+        if not context["search_query"]:
+            params.pop("q", None)
         context["querystring_without_page"] = params.urlencode()
         context["show_search"] = True
         context["search_label"] = "Search Meditators"
@@ -1278,6 +1280,8 @@ class BaseListView(ProductLoginRequiredMixin, CRUDContextMixin, ListView):
         context["search_query"] = (self.request.GET.get("q") or "").strip()
         params = self.request.GET.copy()
         params.pop("page", None)
+        if not context["search_query"]:
+            params.pop("q", None)
         encoded = params.urlencode()
         context["querystring_without_page"] = encoded
         context["show_search"] = True

@@ -1,7 +1,7 @@
 {% if show_search %}
 <div class="search-card crm-search-panel card shadow-sm">
   <div class="card-body">
-    <form method="get">
+    <form method="get" class="js-list-search-form" data-clear-url="{{ search_clear_url|default:request.path }}">
       <label for="list-search-input" class="search-label form-label">{{ search_label|default:"Search" }}</label>
       <div class="search-row">
         <input

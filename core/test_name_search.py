@@ -58,6 +58,20 @@ class FullNameSearchRegressionTests(TestCase):
             last_name="Governor",
             email="nana.governor@example.com",
         )
+        self.other_contact = Contact.objects.create(
+            first_name="Kojo",
+            last_name="Mensah",
+            email="kojo.mensah.reset@example.com",
+        )
+        self.other_prospect = Prospect.objects.create(
+            owner=self.user,
+            contact=self.other_contact,
+        )
+        self.other_student = Student.objects.create(
+            owner=self.user,
+            prospect=self.other_prospect,
+        )
+        self.other_meditator = Meditator.objects.create(student=self.other_student)
 
     def assert_list_search_finds(self, url_name, query, expected):
         response = self.client.get(reverse(url_name), {"q": query})
@@ -121,3 +135,93 @@ class FullNameSearchRegressionTests(TestCase):
             {"q": "Ama Missing"},
         )
         self.assertNotIn(self.contact, list(response.context["object_list"]))
+
+    def test_empty_and_whitespace_search_return_the_full_contact_queryset(self):
+        expected = {self.contact, self.other_contact}
+        for query in ("", "   "):
+            with self.subTest(query=query):
+                response = self.client.get(reverse("core:contact-list"), {"q": query})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(set(response.context["object_list"]), expected)
+                self.assertNotIn("q=", response.context["querystring_without_page"])
+
+    def test_empty_and_whitespace_search_return_all_meditators(self):
+        expected = {self.meditator, self.other_meditator}
+        for query in ("", "   "):
+            with self.subTest(query=query):
+                response = self.client.get(reverse("core:meditator-list"), {"q": query})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(set(response.context["object_list"]), expected)
+                self.assertNotIn("q=", response.context["querystring_without_page"])
+
+    def test_empty_and_whitespace_search_return_the_full_pipeline(self):
+        expected = {self.prospect, self.other_prospect}
+        for query in ("", "   "):
+            with self.subTest(query=query):
+                response = self.client.get(
+                    reverse("core:prospect-pipeline-list"),
+                    {"q": query},
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(set(response.context["object_list"]), expected)
+
+    def test_clear_filters_uses_canonical_urls_and_returns_full_queryset(self):
+        filtered = self.client.get(
+            reverse("core:contact-list"),
+            {"q": "Ama", "has_email": "yes", "page": "1"},
+        )
+        self.assertEqual(list(filtered.context["object_list"]), [self.contact])
+        self.assertContains(
+            filtered,
+            f'href="{reverse("core:contact-list")}">Clear filters</a>',
+            html=False,
+        )
+
+        cleared = self.client.get(reverse("core:contact-list"))
+        self.assertEqual(
+            set(cleared.context["object_list"]),
+            {self.contact, self.other_contact},
+        )
+        self.assertEqual(cleared.context["page_obj"].number, 1)
+
+    def test_searchable_lists_use_the_shared_reset_behavior(self):
+        url_names = (
+            "core:prospect-list",
+            "core:contact-list",
+            "core:student-list",
+            "core:teacher-list",
+            "core:location-list",
+            "core:course-list",
+            "core:coursesession-list",
+            "core:inquiry-list",
+            "core:enrollment-list",
+            "core:invoice-list",
+            "core:payment-list",
+            "core:communication-list",
+            "core:interviewform-list",
+            "core:disbursement-list",
+            "core:meditator-list",
+            "core:prospect-pipeline-list",
+        )
+        for url_name in url_names:
+            with self.subTest(url_name=url_name):
+                canonical_url = reverse(url_name)
+                response = self.client.get(canonical_url)
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, "js-list-search-form")
+                self.assertContains(response, f'data-clear-url="{canonical_url}"')
+
+    def test_prospect_clear_filters_does_not_preserve_state_or_page(self):
+        response = self.client.get(
+            reverse("core:prospect-list"),
+            {"q": "Ama", "state": "all", "page": "1"},
+        )
+        canonical_clear_link = (
+            f'href="{reverse("core:prospect-list")}">Clear filters</a>'
+        )
+        self.assertContains(response, canonical_clear_link, html=False)
+        self.assertNotContains(
+            response,
+            f'{reverse("core:prospect-list")}?state=all">Clear filters</a>',
+            html=False,
+        )
