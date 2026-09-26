@@ -34,6 +34,7 @@ from django.views.generic import (
 
 from .currency import format_currency
 from .forms import (
+    ContactForm,
     StudentForm,
     StudentCreateForm,
     DisbursementReportingFilterForm,
@@ -1535,6 +1536,18 @@ class BaseUpdateView(ProductLoginRequiredMixin, CRUDContextMixin, UpdateView):
             f"core:{self._model_slug()}-detail",
             kwargs={"pk": self.object.pk},
         )
+
+
+class ContactCreateView(BaseCreateView):
+    model = Contact
+    form_class = ContactForm
+    fields = None
+
+
+class ContactUpdateView(BaseUpdateView):
+    model = Contact
+    form_class = ContactForm
+    fields = None
 
 
 class BaseDeleteView(ProductLoginRequiredMixin, CRUDContextMixin, DeleteView):

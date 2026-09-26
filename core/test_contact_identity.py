@@ -308,6 +308,27 @@ class CanonicalIdentityUITests(TestCase):
         self.assertEqual(self.student.last_name, "Boateng")
         self.assertEqual(self.meditator.contact.email, "esi.updated@example.com")
 
+    def test_contact_form_uses_a_date_picker_and_omits_country(self):
+        response = self.client.get(
+            reverse("core:contact-update", kwargs={"pk": self.contact.pk})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="date_of_birth"')
+        self.assertContains(response, 'type="date"')
+        self.assertNotContains(response, 'name="country"')
+        self.assertNotContains(response, ">Country<")
+
+    def test_contact_form_uses_nigerian_state_and_city_search_fields(self):
+        response = self.client.get(
+            reverse("core:contact-update", kwargs={"pk": self.contact.pk})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-nigeria-state="true"')
+        self.assertContains(response, 'data-nigeria-city="true"')
+        self.assertContains(response, "nigeria_address_fields.js")
+
     def test_contact_deletion_is_not_exposed_by_product_routes(self):
         response = self.client.get(reverse("core:contact-list"))
 

@@ -175,6 +175,24 @@ class InquiryForm(forms.ModelForm):
         return inquiry
 
 
+class ContactForm(forms.ModelForm):
+    """Canonical contact identity form used by the product UI."""
+
+    class Meta:
+        model = Contact
+        exclude = ("country",)
+        widgets = {
+            "date_of_birth": forms.DateInput(attrs={"type": "date"}),
+            "province_state": forms.TextInput(
+                attrs={"data-nigeria-state": "true", "autocomplete": "off"}
+            ),
+            "city": forms.TextInput(
+                attrs={"data-nigeria-city": "true", "autocomplete": "off"}
+            ),
+        }
+        labels = {"province_state": "State"}
+
+
 class DisbursementDateRangeReportForm(forms.Form):
     report_by = forms.ChoiceField(
         required=True,
@@ -1415,9 +1433,17 @@ class StudentCreateForm(forms.ModelForm):
     new_notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 2}))
     date_of_birth = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     address = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
-    city = forms.CharField(required=False, max_length=100)
-    province_state = forms.CharField(required=False, max_length=100)
-    country = forms.CharField(required=False, max_length=100)
+    city = forms.CharField(
+        required=False,
+        max_length=100,
+        widget=forms.TextInput(attrs={"data-nigeria-city": "true", "autocomplete": "off"}),
+    )
+    province_state = forms.CharField(
+        required=False,
+        max_length=100,
+        label="State",
+        widget=forms.TextInput(attrs={"data-nigeria-state": "true", "autocomplete": "off"}),
+    )
 
     class Meta:
         model = Student
@@ -1468,9 +1494,8 @@ class StudentCreateForm(forms.ModelForm):
                         Column("new_email", css_class="col-12 col-lg-6"),
                         Column("new_phone_number", css_class="col-12 col-lg-6"),
                         Column("date_of_birth", css_class="col-12 col-lg-6"),
-                        Column("city", css_class="col-12 col-lg-6"),
                         Column("province_state", css_class="col-12 col-lg-6"),
-                        Column("country", css_class="col-12 col-lg-6"),
+                        Column("city", css_class="col-12 col-lg-6"),
                         Column("address", css_class="col-12"),
                         Column("new_source", css_class="col-12"),
                         Column("new_notes", css_class="col-12"),
@@ -1566,7 +1591,7 @@ class StudentCreateForm(forms.ModelForm):
             student.save()
             if person_type == "new_prospect" and contact_created:
                 contact = student.contact
-                for field in ("date_of_birth", "address", "city", "province_state", "country"):
+                for field in ("date_of_birth", "address", "city", "province_state"):
                     value = self.cleaned_data.get(field)
                     if value not in (None, ""):
                         setattr(contact, field, value)
